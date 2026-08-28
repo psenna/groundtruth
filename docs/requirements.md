@@ -696,9 +696,28 @@ runs.
 
 ## 15. Open questions
 
-1. **Name collision.** `groundtruth` needs a PyPI, GitHub, and Docker Hub check
-   before anything is published. The `gt` CLI alias collides with several
-   existing tools; treat it as a local convenience, not a claim.
+1. ~~**Name collision.**~~ **Checked 2026-08-28. Decision: publish nothing to PyPI.**
+
+   | Namespace | Status |
+   |---|---|
+   | PyPI `groundtruth` | **taken** — 0.1.0, "Hallucination detector for LLM outputs" |
+   | PyPI `groundtruth-kb` | **taken** — 0.6.1, AI governance toolkit |
+   | PyPI `ground-truth` | free |
+   | GitHub `psenna/groundtruth` | ours; ~596 unrelated ML-dataset repos share the word |
+   | Docker Hub `psenna/groundtruth` | free |
+
+   Deployment is Docker-first (§4.2), so nothing is ever `pip install`ed and the
+   PyPI collision does not affect this project. **`pyproject.toml` therefore keeps
+   `name = "groundtruth"`, which cannot be published as-is.** If publishing ever
+   becomes desirable, change the distribution name (the import name can stay
+   `groundtruth`, as with `scikit-learn`/`sklearn`) — do not spend time debugging
+   the 403.
+
+   Note the PyPI `groundtruth` package solves an adjacent problem in the same
+   space. Expect occasional confusion when searching.
+
+   The `gt` CLI alias collides with several existing tools; treat it as a local
+   convenience, not a claim.
 2. **Latency and scale targets (§14) are guesses.** Replace with measurements
    after the first real vault exists.
 3. **Reduce quality is the real product risk.** Everything else here is
