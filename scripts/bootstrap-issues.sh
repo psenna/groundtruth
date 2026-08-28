@@ -62,7 +62,7 @@ ensure_milestone "M5 — Recovery"         "Recovery agent, grounding check, ref
 ensure_milestone "M6 — Jobs"             "Per-vault FIFO queue, retry policy, restart recovery"
 ensure_milestone "M7 — API + auth"       "Auth layer and REST endpoints"
 ensure_milestone "M8 — MCP + Web UI"     "MCP server with 8 tools; htmx web UI"
-ensure_milestone "M9 — Eval + operations" "Golden eval, observability, Docker"
+ensure_milestone "M9 — Operations"        "Observability and Docker deployment"
 
 echo "==> labels"
 ensure_label "area:storage"   "0e8a16" "Notes, git, indexes, job store"
@@ -147,10 +147,13 @@ Spec: §5 (layout), §6 (note format), §8.4 (refusals), §12.1 (job records).
 - [ ] `JobRecord` state transitions are constrained to the legal set
 - [ ] `AnswerResult` and `Refusal` are distinguishable types; `Refusal` carries a reason of
       `no_evidence` or `budget_exhausted` (§8.4)
+- [ ] **`Citation` is structured — `{vault, path}`, not a string** (§8.3). It carries the
+      vault even though MVP queries target one vault, so cross-vault would change only
+      rendering.
 
 ## Acceptance criteria
 - [ ] Models for: `Vault`, `NoteFrontmatter`, `Note`, `SourceRecord`, `JobRecord`,
-      `AnswerResult`, `Refusal`
+      `Citation`, `AnswerResult`, `Refusal`
 - [ ] Invalid input raises `ValidationError` with a useful message
 - [ ] `mypy --strict` clean
 
@@ -403,7 +406,7 @@ mkissue "Budget tracker for agent loops" "M3 — Retrieval engine" "area:llm,spe
 Bounds the shared agent loop. Exhaustion is not an error — it produces a **refusal**,
 structurally identical to no-evidence (ADR-6). This is what keeps §8.4 absolute.
 
-Spec: §8.2 · ADR-6.
+Spec: §8.2 (recovery), §7.4 (ingestion) · ADR-6.
 
 ## Write these tests first
 - [ ] Tool-call ceiling reached → exhaustion signalled
@@ -413,6 +416,9 @@ Spec: §8.2 · ADR-6.
 - [ ] Defaults match §8.2 exactly (30 calls, 60 s, 50 matches, 64 KB, 32 KB)
 - [ ] Per-vault overrides take effect
 - [ ] Budget is not shared across concurrent agent runs
+- [ ] **Exhaustion is reported, not interpreted** — the budget signals exhaustion and the
+      caller decides what it means: ingestion fails the job (§7.4), recovery refuses (§8.2).
+      This module must not assume either.
 
 ## Acceptance criteria
 - [ ] `Budget` tracks consumption and reports `exhausted` with the limit that tripped
@@ -661,6 +667,10 @@ Parsing:
 Derived vocabulary:
 - [ ] Vocabulary is computed from note frontmatter `tags` across the vault
 - [ ] Tags are returned with usage counts and **ranked by frequency**
+- [ ] Injection stops at `vocab_max_bytes` (default 4096, per-vault overridable) —
+      **a byte cap only, no separate count limit** (§5.3)
+- [ ] A small vault emits its whole vocabulary untruncated
+- [ ] When truncated, the output states that it was and how many tags were omitted
 - [ ] An empty vault yields an empty vocabulary, not an error
 - [ ] A note with malformed frontmatter is skipped with a warning, not fatal
 - [ ] **Cache is keyed on the vault's git `HEAD` sha**: same sha → no rescan
@@ -774,6 +784,9 @@ Integration tests over real temp repos with a scripted fake LLM.
 - [ ] `pull --ff-only` conflict → abort, no changes
 - [ ] Validator rejection → rollback, **nothing staged, nothing committed**
 - [ ] LLM failure mid-run → rollback, repo byte-identical to its pre-job state
+- [ ] **Retrieval budget exhausted → job FAILS** (§7.4), rollback, nothing created. It
+      must not proceed with a partial survey — that risks a silent duplicate note.
+      Note this is the opposite of recovery, which refuses rather than fails.
 - [ ] Happy path → exactly **one** commit containing notes + archive together
 - [ ] Push failure → the local commit survives and the job still reports success (§7.10)
 - [ ] Every failure path leaves the repo clean — assert `is_clean()` after each
@@ -838,6 +851,8 @@ Spec: §9.1. Invariant 3.
       filtered or repaired answer
 - [ ] The check runs on every path — assert it cannot be bypassed by a caller
 - [ ] Citation extraction reuses `extract_links` from #19, not a second parser
+- [ ] Citations resolve as `{vault, path}` (§8.3) — the check validates against the
+      citation's own vault, not an ambient one
 
 ## Acceptance criteria
 - [ ] `check_grounding(answer, vault) -> AnswerResult | Refusal`
@@ -862,6 +877,10 @@ Spec: §8.3, §8.4 · ADR-6.
 
 ## Write these tests first
 - [ ] An answer renders as Markdown with `[[note]]` citations
+- [ ] **Citations are structured `{vault, path}` internally and rendered flat** as
+      `[[path]]` (§8.3) — rendering is the only place the vault is dropped
+- [ ] A rendering test proves the vault-qualified form `[[vault:path]]` is reachable
+      without changing the model layer
 - [ ] Every substantive claim carries a citation (§8.3)
 - [ ] `Refusal(no_evidence)` and `Refusal(budget_exhausted)` are the only two reasons
 - [ ] **The two refusals are structurally identical** — same type, same shape, differing
@@ -1231,7 +1250,7 @@ rendering.
 BODY
 
 # ---------------------------------------------------------------- M9
-mkissue "Fixture vault and golden eval with must-refuse cases" "M9 — Eval + operations" "area:ops,spec-critical" <<'BODY'
+mkissue "Fixture vault and golden eval with must-refuse cases" "M5 — Recovery" "area:ops,spec-critical" <<'BODY'
 ## Context
 Layer 2 of grounding verification, and the highest-value tests in the project. **The
 must-refuse cases are the point** — they are the only mechanical way to catch the model
@@ -1261,11 +1280,15 @@ Spec: §9.2.
 `tests/fixtures/vault/`, `tests/integration/test_grounding_eval.py`
 
 ## Notes
-Blocked by #2, #26. Pull this forward as soon as #26 lands — it is the measuring
-instrument for #21's prompt iteration, which cannot be tuned without it.
+Blocked by #2, #26.
+
+**This issue lives in M5, not M9, deliberately.** It depends on #26 (answer format) and
+#21 (reduce prompts, M4) depends on *it* — prompt quality cannot be tuned without a way
+to measure it. Scheduling it late would guarantee that dependency is discovered too late
+to act on. Build it as soon as #26 lands.
 BODY
 
-mkissue "Observability: timings, token counts, LLM logging" "M9 — Eval + operations" "area:ops" <<'BODY'
+mkissue "Observability: timings, token counts, LLM logging" "M9 — Operations" "area:ops" <<'BODY'
 ## Context
 Answers "what is an ingest costing me" and makes prompt regressions debuggable. LLM
 logging is **off by default** — prompts contain ingested content.
@@ -1294,7 +1317,7 @@ Spec: §12.4, §7.11.
 Blocked by #23, #26. Invariant 6.
 BODY
 
-mkissue "Docker image and compose" "M9 — Eval + operations" "area:ops" <<'BODY'
+mkissue "Docker image and compose" "M9 — Operations" "area:ops" <<'BODY'
 ## Context
 Docker-first deployment: a single image serving API, MCP and web, with named volumes for
 vault repos and the state dir.

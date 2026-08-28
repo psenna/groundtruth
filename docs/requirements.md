@@ -56,7 +56,7 @@ These terms are now fixed and used consistently throughout.
 |---|---|
 | Thin CLI | API must be complete enough that a CLI is a pure client — no logic below it. |
 | URL / PDF / DOCX / image ingest | Ingestion must accept text at a boundary an adapter can feed. |
-| Cross-vault queries | Every engine call takes an explicit vault; nothing may assume exactly one. |
+| Cross-vault queries | Every engine call takes an explicit vault; nothing may assume exactly one. Citations carry their vault (§8.3) so only rendering would change. |
 
 ### 3.3 Non-goals
 
@@ -203,8 +203,14 @@ automated process needs write access to a user-authored file.
 
 **Caching.** The derived vocabulary is keyed on the vault's git `HEAD` sha. It is
 therefore invalidated exactly when the vault changes and never otherwise — no
-staleness heuristics, no TTL. Tags are ranked by frequency, so the list can be
-truncated for context without losing the ones that matter.
+staleness heuristics, no TTL.
+
+**Budget.** Tags are ranked by frequency and injected until `vocab_max_bytes`
+(default 4 KB, per-vault overridable) is reached. There is no separate count limit:
+bytes are what actually cost context, and 200 short tags are not 200 long ones. On
+a small vault the whole vocabulary fits and nothing is dropped; on a large one the
+long tail is cut, which is the tail that matters least. When truncation happens the
+model is told so, and how many tags were omitted.
 
 ---
 
@@ -284,7 +290,17 @@ find the notes this text relates to.
 This is deliberate. "Which notes are relevant to this text?" is the same problem
 recovery solves, so it is the same code — one retrieval engine to build, test, and
 improve, benefiting both pipelines. See ADR-3. The agent is subject to the same
-budget caps as recovery (§8.2).
+budget caps as recovery (§8.2) — but **not** to the same exhaustion behavior.
+
+**On budget exhaustion during ingestion, the job fails.** It does not proceed with
+a partial survey. If the vault could not be surveyed, the pipeline does not know
+whether this text belongs in an existing note, and creating a new one anyway
+produces a silent duplicate that degrades every future answer. The costs are
+asymmetric: a failed job is a retry, a duplicate note is permanent damage. The
+failure is reported with its remedy — raise `max_tool_calls` for this vault.
+
+This is the one place the two pipelines diverge. Recovery refuses because there is
+a user waiting for an answer; ingestion fails because there is not.
 
 ### 7.5 LLM processing
 
@@ -401,8 +417,11 @@ the map of the vault's organization.
 | `grep_max_bytes` | 64 KB | yes |
 | `read_max_bytes` | 32 KB per note | yes |
 
-**On budget exhaustion the agent refuses.** It does not return a partial answer
-with a caveat.
+These limits apply to the agent loop in **both** pipelines. What exhaustion *means*
+differs: ingestion fails the job (§7.4); recovery refuses, as follows.
+
+**On budget exhaustion the recovery agent refuses.** It does not return a partial
+answer with a caveat.
 
 > "Could not establish ground truth for this question within the search budget."
 
@@ -413,6 +432,20 @@ answer behind a warning banner trains users to ignore warning banners. See ADR-6
 
 Markdown, with `[[note]]` citations pointing at the evidence. Every substantive
 claim carries a citation.
+
+**A citation is a structured value internally**, not a string:
+
+```
+Citation(vault="work", path="companies/Acme Corp.md")
+    rendered today  ->  [[companies/Acme Corp]]
+```
+
+The vault is carried even though every MVP query targets exactly one vault (§8.5).
+This costs one unread field now and means cross-vault, if it ever lands, changes
+only the *rendering* — to `[[work:companies/Acme Corp]]` — leaving the model layer,
+the grounding check (§9.1) and the API/MCP/web response shape untouched. Migrating
+a flat string format later would be a simultaneous breaking change across all three
+surfaces.
 
 ### 8.4 The grounding rule
 
@@ -567,6 +600,7 @@ defaults:                 # applied to every vault unless overridden
     max_note_bytes: 65536
     max_tool_calls: 30
     max_wall_clock_s: 60
+    vocab_max_bytes: 4096
 ```
 
 ### 11.3 Per-vault — `.groundtruth.yaml`

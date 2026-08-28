@@ -100,8 +100,13 @@ from a single issue's text.
    answer. If citations are missing or a cited note does not exist, the answer is
    downgraded to a refusal. (§9.1)
 
-4. **Budget exhaustion is a refusal too**, structurally identical to no-evidence. Never a
-   partial answer behind a warning banner. (§8.2, ADR-6)
+4. **Budget exhaustion never yields partial work** — but what it *does* yield differs by
+   pipeline, and this is the one place they diverge:
+   - **Recovery** refuses, structurally identical to no-evidence. Never a partial answer
+     behind a warning banner. (§8.2, ADR-6)
+   - **Ingestion** fails the job. It must not proceed on a partial survey of the vault —
+     that risks a silent duplicate note, which is permanent damage to answer quality,
+     whereas a failed job is just a retry. (§7.4)
 
 5. **Never ingest into a dirty working tree.** Rollback uses `git reset --hard` +
    `git clean -fd`, which would destroy a user's unsaved Obsidian edits. The precondition
@@ -170,6 +175,11 @@ Do not resolve these yourself:
 
 - **The source index lives in the state dir, not in the repo** (ADR-7). Dedup and
   provenance must keep working when `raw_archive` is disabled.
+
+- **A citation is `{vault, path}`, never a bare string** (§8.3), even though every MVP
+  query targets one vault. Rendering drops the vault; the model layer never does. This is
+  what keeps cross-vault a rendering change rather than a breaking migration across the
+  API, MCP and web surfaces at once.
 
 - **The hardest part of this project is not in any issue.** Whether the reduce step (§7.5)
   produces a vault worth querying is a prompt-iteration problem. Issue #21 will take
