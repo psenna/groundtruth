@@ -638,36 +638,59 @@ Spec: §7.6 (link integrity), §6 (body format).
 Blocked by #8. Reused by recovery — keep it free of ingest-specific assumptions.
 BODY
 
-mkissue "schema.md parser and gated append" "M4 — Ingestion" "area:ingest,spec-critical" <<'BODY'
+mkissue "schema.md parser and derived tag vocabulary" "M4 — Ingestion" "area:ingest,spec-critical" <<'BODY'
 ## Context
-`schema.md` is the user-authored map of a vault. The system may append to it — recording
-new tags — **only when `schema_evolution` is enabled**, and that gate applies at every
-entry point including the MCP `update_schema` tool.
+`schema.md` is the user-authored map of a vault: its folder list and its **prescriptive**
+tag guidance ("use `vendor`, not `supplier`"). This issue makes it readable by the system
+and derives the **active** tag vocabulary from note frontmatter.
 
-Spec: §5.2, §5.3, §13.1.
+**The ingestion pipeline never writes to `schema.md`** (ADR-12). There is no append path
+to build here — the earlier version of this issue asked for one, and the spec has since
+removed it. The tag vocabulary is derived, not stored: a written list would be a second
+copy of what already lives in every note's frontmatter, and two copies drift.
+
+Spec: §5.2, §5.3, §13.1 · ADR-12.
 
 ## Write these tests first
-- [ ] Parse the declared folder list and tag vocabulary from the template format
+Parsing:
+- [ ] Parse the declared folder list from the §13.1 template format
 - [ ] Parsing tolerates user prose, extra sections and reordering — it is a human document
-- [ ] `schema_evolution: false` → **every** append attempt refuses
-- [ ] `schema_evolution: true` → a new tag is appended
-- [ ] Appending **preserves user prose and structure** — assert unrelated content is
-      byte-identical afterwards
-- [ ] A tag that already exists is not appended twice
-- [ ] Appended tags are normalized (lowercase, dash-separated)
 - [ ] A malformed `schema.md` raises a clear error naming the problem
+- [ ] Missing `schema.md` raises a distinct, clear error
+
+Derived vocabulary:
+- [ ] Vocabulary is computed from note frontmatter `tags` across the vault
+- [ ] Tags are returned with usage counts and **ranked by frequency**
+- [ ] An empty vault yields an empty vocabulary, not an error
+- [ ] A note with malformed frontmatter is skipped with a warning, not fatal
+- [ ] **Cache is keyed on the vault's git `HEAD` sha**: same sha → no rescan
+- [ ] A new commit invalidates the cache and the next call reflects new tags
+- [ ] The cache lives in the state dir, never in the vault
+
+Write protection:
+- [ ] **This module exposes no way for ingestion to write `schema.md`** — assert the
+      public surface
+- [ ] `allow_schema_writes` defaults to `false`
+- [ ] The write helper used by MCP `update_schema` refuses when the flag is false
+- [ ] When enabled, a write preserves the content exactly as given (the caller supplies
+      full content; this module does not merge or splice)
 
 ## Acceptance criteria
-- [ ] `parse_schema(text) -> Schema` with `.folders` and `.tags`
-- [ ] `append_tags(schema_text, tags, allowed: bool) -> str` — refuses when not allowed
-- [ ] The gate is enforced *in this module*, so no caller can bypass it
+- [ ] `parse_schema(text) -> Schema` exposing `.folders` and the raw prescriptive text
+- [ ] `derive_vocabulary(vault) -> list[TagCount]`, frequency-ranked and HEAD-sha cached
+- [ ] `write_schema(vault, markdown, allowed: bool)` — refuses when not allowed; used
+      **only** by MCP `update_schema` (#36)
+- [ ] No code path lets ingestion reach `write_schema`
 
 ## Files
-`src/groundtruth/ingest/schema.py`, `tests/unit/test_schema.py`
+`src/groundtruth/ingest/schema.py`, `src/groundtruth/ingest/vocabulary.py`,
+`tests/unit/test_schema.py`, `tests/unit/test_vocabulary.py`
 
 ## Notes
-Blocked by #6. See spec open question 4 — the append mechanism (anchored section vs.
-fenced block) is unresolved. Pick one, document it in the PR, and keep user prose intact.
+Blocked by #6 (frontmatter), #8 (note repository).
+
+Invariant: never add code that writes a derived tag list to disk — that reintroduces
+exactly the drift ADR-12 removed. See `CLAUDE.md`.
 BODY
 
 mkissue "Ingestion prompts: tag, reduce, organize" "M4 — Ingestion" "area:llm" <<'BODY'
@@ -680,8 +703,11 @@ Spec: §7.5 · granularity per ADR-9.
 
 ## Write these tests first
 Structural assertions with a scripted fake client — do not assert on prose quality.
-- [ ] Prompts include `schema.md` content as the organizing map
+- [ ] Prompts include `schema.md` verbatim as the **prescriptive** map, AND the
+      **derived** tag vocabulary from #20 as the descriptive list of what exists (§5.3)
 - [ ] Tag output is normalized (lowercase, dash-separated) or rejected
+- [ ] New tags are **not** written anywhere — they enter the vocabulary simply by
+      appearing in a committed note's frontmatter (ADR-12)
 - [ ] **Granularity: one note per topic/entity**, not per claim (ADR-9) — assert the model
       is instructed accordingly and that a multi-fact input maps to few notes
 - [ ] Organize output only ever calls `create_note` / `update_note` (#17)
@@ -698,7 +724,11 @@ Structural assertions with a scripted fake client — do not assert on prose qua
 `src/groundtruth/ingest/prompts/`, `tests/unit/test_ingest_prompts.py`
 
 ## Notes
-Blocked by #15. Do not chase quality here before #39's eval exists to measure it.
+Blocked by #15, #20.
+
+**Sequencing:** do not attempt quality tuning here before #39 (the golden eval) exists.
+#39 is the measuring instrument for this issue; without it you are tuning blind. If you
+reach #21 in milestone order and #39 is not done, build #39 first.
 BODY
 
 mkissue "Raw archive writer and commit message formatter" "M4 — Ingestion" "area:ingest" <<'BODY'
@@ -1123,8 +1153,10 @@ Spec: §10.2.
       `list_vaults`, `list_notes`, `read_note`, `get_schema`, `update_schema`
 - [ ] `groundtruth_query` returns citations, or a refusal in the **same shape** as the API
 - [ ] `groundtruth_ingest` honors dedup and `wait`
-- [ ] **`update_schema` is refused when `schema_evolution` is disabled** (§5.2, §10.2)
-- [ ] `update_schema` succeeds when enabled, preserving user prose (#20)
+- [ ] **`update_schema` is refused unless `allow_schema_writes` is enabled** (§5.2, ADR-12)
+- [ ] **`allow_schema_writes` defaults to `false`** — assert the default explicitly
+- [ ] `update_schema` succeeds when enabled, writing the content it was given (#20)
+- [ ] `update_schema` is the **only** write path to `schema.md` in the whole system
 - [ ] `read_note` and `list_notes` are containment-checked
 - [ ] No tool bypasses the write validator or the grounding check
 - [ ] Tool bodies contain no business logic — assert by inspection in review
@@ -1138,7 +1170,8 @@ Spec: §10.2.
 
 ## Notes
 Blocked by #33, #34, #35. `update_schema` is the only MCP tool that could violate the
-schema lock — the spec calls it out explicitly for that reason.
+schema lock, and since ADR-12 it is the only path anywhere that writes that file. Default
+is off; a user must opt in.
 BODY
 
 mkissue "Web UI: ingest and query views" "M8 — MCP + Web UI" "area:web" <<'BODY'

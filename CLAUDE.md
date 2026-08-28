@@ -87,6 +87,10 @@ from a single issue's text.
 1. **Recovery never writes.** No note, no `schema.md`, no commit, no exception. The
    recovery agent gets read-only tools and nothing else. (§8.1)
 
+   Ingestion never writes `schema.md` either — see ADR-12. The *only* write path to
+   that file anywhere in the system is the MCP `update_schema` tool, and it is off by
+   default.
+
 2. **LLM output reaches disk only through the validator.** The model never emits a
    filesystem path — it calls `create_note(folder, title, body)` / `update_note(path, body)`
    and the validator gates everything before staging. Any code path that writes model
@@ -148,10 +152,17 @@ Do not resolve these yourself:
 
 ## Context worth having
 
-- **`schema.md`** is the user-authored map of a vault: its folder organization and tag
-  vocabulary. Both pipelines read it first. The system may only append to it when
-  `schema_evolution` is enabled for that vault — and that gate applies at *every* entry
-  point, including the MCP `update_schema` tool. (§5.2)
+- **`schema.md`** is the user-authored map of a vault: its folder organization and its
+  *prescriptive* tag vocabulary ("use `vendor`, not `supplier`"). Both pipelines read it
+  first. **The ingestion pipeline never writes to it** — the only write path in the whole
+  system is the MCP `update_schema` tool, gated by `allow_schema_writes`, default `false`.
+  (§5.2, ADR-12)
+
+- **The active tag vocabulary is derived, not stored.** New tags are never recorded
+  anywhere: they are computed from note frontmatter and injected into prompts alongside
+  `schema.md`. The derived list is cached against the vault's git `HEAD` sha, so it
+  invalidates exactly when the vault changes. Never add code that writes a tag list to
+  disk — that reintroduces the drift ADR-12 removed. (§5.3)
 
 - **Notes are one-per-topic**, not one-per-claim (ADR-9), with required YAML frontmatter
   carrying `tags` and an append-only `sources` list of SHA-256 hashes. Frontmatter is the

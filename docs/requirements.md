@@ -170,17 +170,41 @@ Filename is fixed by the system; content is owned by the user. It documents the
 vault's folder organization and its tag vocabulary, and it is the first thing
 both pipelines read.
 
-The system may append to it — recording newly created tags — **only when
-`schema_evolution` is enabled** for that vault. When disabled, the user-defined
-structure is locked and **every** write path refuses, including the MCP
-`update_schema` tool (§10.2). This invariant is stated once, here, and referenced
-elsewhere.
+**The ingestion pipeline never writes to `schema.md`.** It is read-only to the
+system on every automated path. The user's structure is protected structurally
+rather than by a configuration flag — there is no write path to disable.
+
+The single exception is the MCP `update_schema` tool (§10.2), which exists so an
+external agent can propose vocabulary changes. It is gated by
+**`allow_schema_writes`, which defaults to `false`** — writing into a human's
+document is opt-in. This invariant is stated once, here, and referenced elsewhere.
+
+`schema.md` is **prescriptive**: it tells the system how the user wants this vault
+organized ("use `vendor`, not `supplier`"). It is not an inventory of what the
+vault currently contains — see §5.3.
 
 ### 5.3 Tags
 
-Normalized form: lowercase, no spaces, words separated by `-`. The LLM may
-introduce new tags; each new tag must be recorded in `schema.md`, subject to
-§5.2.
+Normalized form: lowercase, no spaces, words separated by `-`.
+
+The LLM may introduce new tags. It does **not** record them anywhere: the
+**active vocabulary is derived** from note frontmatter (§6) rather than stored,
+and injected into prompts alongside `schema.md`.
+
+```
+prompt context = schema.md (verbatim, prescriptive — what the user wants)
+               + derived vocabulary (computed, descriptive — what exists)
+```
+
+Deriving rather than storing removes a whole class of failure. A written tag list
+is a second copy of information that already lives in every note's frontmatter,
+and two copies drift; a derived list is correct by construction. It also means no
+automated process needs write access to a user-authored file.
+
+**Caching.** The derived vocabulary is keyed on the vault's git `HEAD` sha. It is
+therefore invalidated exactly when the vault changes and never otherwise — no
+staleness heuristics, no TTL. Tags are ranked by frequency, so the list can be
+truncated for context without losing the ones that matter.
 
 ---
 
@@ -267,7 +291,9 @@ budget caps as recovery (§8.2).
 May be one pass or several; the following are requirements on the output, not a
 prescribed call structure.
 
-- **Tag** — assign normalized tags; record new ones in `schema.md` subject to §5.2.
+- **Tag** — assign normalized tags, guided by `schema.md` and the derived active
+  vocabulary (§5.3). New tags need no recording step; they become part of the
+  derived vocabulary as soon as the note carrying them is committed.
 - **Reduce** — distill the text to the information worth keeping: claims, facts,
   and relationships relevant to the vault's subject matter as described by
   `schema.md`. Not a transcript, not the full text. Discard narration, hedging,
@@ -466,7 +492,7 @@ Lets external LLM agents use `groundtruth` natively.
   with the same validation as the API.
 - **Implementation:** a thin protocol adapter over the core engine. Same code
   paths as the REST API — dedup, atomicity, budgets, grounding, and the
-  `schema_evolution` lock all apply identically and are not restated per tool.
+  `allow_schema_writes` gate all apply identically and are not restated per tool.
 
 | Tool | Signature |
 |---|---|
@@ -477,7 +503,7 @@ Lets external LLM agents use `groundtruth` natively.
 | `list_notes` | `(vault, path?, tag?)` → note paths and tags |
 | `read_note` | `(vault, path)` → note content |
 | `get_schema` | `(vault)` → `schema.md` content |
-| `update_schema` | `(vault, markdown, rationale)` → edit `schema.md`. **Refused when `schema_evolution` is disabled** (§5.2). |
+| `update_schema` | `(vault, markdown, rationale)` → edit `schema.md`. **Refused unless `allow_schema_writes` is enabled; it defaults to `false`** (§5.2). The only write path to `schema.md` in the system. |
 
 ### 10.3 Web UI
 
@@ -527,7 +553,7 @@ vaults:                   # registry: name → repo root
 defaults:                 # applied to every vault unless overridden
   raw_archive: true
   auto_push: false
-  schema_evolution: true
+  allow_schema_writes: false   # gates MCP update_schema only (§5.2)
   models:
     default:
       base_url: http://localhost:11434/v1
@@ -637,8 +663,13 @@ learns what belongs in it:
 - projects/ — ongoing work
 
 ## Tags
-<!-- Vocabulary for this vault. Lowercase, dash-separated. -->
-- company, vendor, person, project
+<!-- How you want things tagged. This is guidance for the system, not an
+     inventory — the tags actually in use are derived from your notes (§5.3),
+     so you never have to maintain a list here.
+     Lowercase, dash-separated. -->
+- Use `vendor` for suppliers, not `supplier`.
+- Prefer `project` over `initiative`.
+- Tag people with `person` plus their organization.
 ```
 
 ### 13.2 Deregistration
@@ -673,12 +704,13 @@ runs.
 3. **Reduce quality is the real product risk.** Everything else here is
    mechanically verifiable; whether the distillation produces a vault worth
    querying is a prompt-iteration problem with no design answer. Budget for it.
-4. **`schema.md` editing mechanics.** The file is user-authored prose. How does
-   the system append a tag without clobbering the user's structure — an anchored
-   section, a fenced block, or a full LLM rewrite? Unresolved.
-5. **`schema.md` context growth.** Both pipelines read it in full on every run.
-   At what size does it stop fitting comfortably in context, and what happens
-   then?
+4. ~~**`schema.md` editing mechanics.**~~ **Resolved** — the system no longer
+   writes to `schema.md` at all. See §5.3 and ADR-12.
+5. **`schema.md` context growth.** Largely resolved by ADR-12: `schema.md` can no
+   longer grow from system writes, so it stays whatever size the user wrote, and
+   the derived vocabulary is frequency-ranked and therefore safely truncatable.
+   What remains is a display budget — how many tags to show before truncating —
+   which needs a real vault to tune.
 6. **Cross-vault query semantics.** When it arrives: fan out and merge, or route
    to one vault? Affects nothing today, but the answer shapes the citation format.
 
@@ -764,3 +796,25 @@ Two strategies do not require a registry, and this is more structure than YAGNI
 would allow. Chosen deliberately so that API, MCP, and Web UI cannot diverge in
 how they authenticate, and so a third strategy is additive. Recorded here so the
 cost is visible rather than accidental.
+
+**ADR-12 — `schema.md` is never written by the ingestion pipeline; tag vocabulary
+is derived, not stored.**
+*Rejected:* an anchored managed section inside `schema.md`; a system-owned fenced
+block; a full LLM rewrite of the file.
+Revision 2 originally had ingestion append newly created tags to `schema.md`,
+gated by a `schema_evolution` flag. Every mechanism for doing so safely required
+the system to own a region of a user-authored document, and left two copies of the
+tag vocabulary — one written, one implied by note frontmatter — that could drift.
+
+Separating the file's two roles dissolved the problem. `schema.md` is
+*prescriptive* (how the user wants this vault organized) and can only be
+user-authored. The tag inventory is *descriptive* (what tags exist) and is already
+recorded in every note's frontmatter, so it can be derived on demand and injected
+into prompts. Deriving is correct by construction, needs no markers in the user's
+file, and removes the write path rather than guarding it.
+
+Consequences: the flag survives only to gate the MCP `update_schema` tool, renamed
+to `allow_schema_writes` and defaulted to `false` — its original default of "on"
+existed because ingestion needed it, and ingestion no longer writes. The derived
+vocabulary is cached against the vault's git `HEAD` sha, which invalidates exactly
+when the vault changes.
