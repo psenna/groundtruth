@@ -13,8 +13,11 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv sync --all-extras
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy src/
-      - run: uv run pytest
+      # --locked fails the build if uv.lock is stale vs pyproject.toml; the
+      # subsequent --frozen runs install/execute strictly from the lockfile
+      # with no dependency resolution.
+      - run: uv sync --all-extras --locked
+      - run: uv run --frozen ruff check .
+      - run: uv run --frozen ruff format --check .
+      - run: uv run --frozen mypy src/
+      - run: uv run --frozen pytest
