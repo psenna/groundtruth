@@ -10,6 +10,9 @@ dist/
 build/
 *.egg-info/
 
+# local offline package cache, populated via DependaProxy (scripts/fetch-deps.py)
+wheelhouse/
+
 # runtime state — never committed (spec §5.1)
 state/
 *.local.yaml

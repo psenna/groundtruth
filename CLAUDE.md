@@ -29,6 +29,29 @@ uv run mypy src/              # type check
 Before opening a PR, all four must be clean: `pytest`, `ruff check`, `ruff format --check`,
 `mypy src/`.
 
+### Offline install via DependaProxy
+
+Environments without direct PyPI access install from a local wheelhouse fetched through
+DependaProxy, so every package is supply-chain-validated on the way in:
+
+```bash
+python scripts/fetch-deps.py                      # fill ./wheelhouse/ from uv.lock, via DependaProxy
+uv export --frozen --all-extras --no-emit-project --no-hashes -o /tmp/reqs.txt
+uv pip install --no-index --find-links wheelhouse -r /tmp/reqs.txt   # third-party deps
+uv pip install --no-index --find-links wheelhouse --no-deps .        # this project (hatchling is vendored)
+```
+
+`uv sync --frozen` is *not* usable here: it installs each package from the exact
+`files.pythonhosted.org` URL in the lock and ignores `--find-links`. The `uv pip` steps
+above resolve against the wheelhouse instead.
+
+`scripts/fetch-deps.py` verifies every download against the `sha256` in `uv.lock` — that
+check is what makes fetching from DependaProxy instead of the locked URL safe. It only
+works when every locked version is >= 7 days old (DependaProxy's gate), which is why
+`pyproject.toml` sets `[tool.uv] exclude-newer`; bump that date only past a 7-day-old
+release, and re-run `fetch-deps.py` after any lock change. CI reaches PyPI directly and
+uses the lock's URLs unchanged.
+
 ---
 
 ## Architecture
