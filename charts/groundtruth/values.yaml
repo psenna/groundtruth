@@ -1,0 +1,157 @@
+# Default values for the groundtruth chart.
+
+# -- Number of replicas. groundtruth keeps per-vault git repos and a FIFO job
+# queue on a single ReadWriteOnce volume, so it is single-writer by design.
+# Do not raise this above 1.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/psenna/groundtruth
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag. Defaults to `.Chart.appVersion`.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# -- Pod-level security context. fsGroup makes the persistent volumes writable
+# by whatever (non-root) uid the image runs as, without pinning that uid here.
+podSecurityContext:
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
+
+# -- Container-level security context. The image already runs as a non-root
+# system user; this hardens it further. readOnlyRootFilesystem is left off
+# because git writes under $HOME and the venv.
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: groundtruth.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# -- Persistent storage. `state` holds job records, the source index, the vault
+# registry and optional LLM logs (spec §5.1 — deliberately outside any vault
+# repo). `vaults` holds the vault git repos, one per directory under /data.
+persistence:
+  state:
+    enabled: true
+    # -- Use an already-provisioned PVC instead of creating one.
+    existingClaim: ""
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: ""
+    # -- Keep the PVC (and its data) when the release is uninstalled.
+    retainOnDelete: true
+  vaults:
+    enabled: true
+    existingClaim: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    storageClass: ""
+    retainOnDelete: true
+
+# -- Secrets are supplied to the process as environment variables ONLY
+# (spec §11.4); config.yaml references them by name. Either point at an
+# existing Secret or let the chart create one from `secret.data`.
+secret:
+  # -- Name of an existing Secret whose keys are injected as env vars.
+  existingSecret: ""
+  # -- Key/value pairs the chart puts into a managed Secret. Prefer
+  # `existingSecret` or `--set-string` / a sealed secret in real deployments;
+  # anything here lands in `helm get values` in plain text.
+  data: {}
+  #   GT_API_KEY: ""
+  #   GT_BEARER_TOKEN: ""
+
+# -- Extra plain (non-secret) environment variables.
+extraEnv: []
+#  - name: SOME_FLAG
+#    value: "1"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -- The full groundtruth config.yaml (spec §11.2), rendered verbatim into a
+# ConfigMap and mounted at /etc/groundtruth/config.yaml. NEVER put a secret
+# here — reference an environment variable by name (see `secret` above).
+config:
+  server:
+    bind: 0.0.0.0
+    port: 8000
+    auth: none # none | bearer
+    mcp_endpoint: /mcp
+    # bearer_token_env: GT_BEARER_TOKEN   # required when auth: bearer
+  state_dir: /var/lib/groundtruth
+  job_retention_days: 7
+  llm_logging: false
+  vaults:
+    work: /data/work
+  defaults:
+    raw_archive: true
+    auto_push: false
+    allow_schema_writes: false
+    models:
+      default:
+        base_url: http://llm:11434/v1
+        model: qwen2.5:14b
+        api_key_env: GT_API_KEY
+      tag: {model: qwen2.5:7b}
+      reduce: {model: qwen2.5:14b}
+      answer: {model: qwen2.5:32b}
+    limits:
+      max_notes_per_ingest: 10
+      max_note_bytes: 65536
+      max_tool_calls: 30
+      max_wall_clock_s: 60
+      grep_max_matches: 50
+      grep_max_bytes: 65536
+      read_max_bytes: 32768
+      vocab_max_bytes: 4096

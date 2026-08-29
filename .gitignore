@@ -14,3 +14,7 @@ build/
 state/
 *.local.yaml
 .env
+
+# local Helm/uv scratch
+wheelhouse/
+.scratch-uv

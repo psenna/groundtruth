@@ -1,0 +1,43 @@
+{{- if and .Values.persistence.state.enabled (not .Values.persistence.state.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "groundtruth.statePvcName" . }}
+  labels:
+    {{- include "groundtruth.labels" . | nindent 4 }}
+  {{- if .Values.persistence.state.retainOnDelete }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.state.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.state.size | quote }}
+  {{- with .Values.persistence.state.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}
+{{- if and .Values.persistence.vaults.enabled (not .Values.persistence.vaults.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "groundtruth.vaultsPvcName" . }}
+  labels:
+    {{- include "groundtruth.labels" . | nindent 4 }}
+  {{- if .Values.persistence.vaults.retainOnDelete }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.vaults.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.vaults.size | quote }}
+  {{- with .Values.persistence.vaults.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}
