@@ -22,7 +22,7 @@ from datetime import date
 from typing import Any
 
 from ..config import VaultConfig
-from ..errors import GitConflictError, GroundtruthError
+from ..errors import GitConflictError, GroundtruthError, is_transient
 from ..llm.client import LLMResponse
 from ..models import JobRecord, JobState, Note, NoteFrontmatter, SourceRecord, Vault
 from ..retrieval.agent import AgentStatus, run_agent
@@ -230,7 +230,11 @@ class IngestPipeline:
         except _StageFailureError as failure:
             return self._fail(job, acc, repo, failure.stage, failure.message, failure.rollback)
         except GroundtruthError as exc:
-            # Any classified failure past the clean-tree check rolls back.
+            if is_transient(exc):
+                # Roll the repo back to clean and let the worker's retry policy (#28)
+                # decide — a transient failure may succeed on the next attempt (§12.2).
+                repo.rollback()
+                raise
             return self._fail(job, acc, repo, acc.current, str(exc), rollback=True)
 
     def _fail(
@@ -343,6 +347,8 @@ class IngestPipeline:
         try:
             response: LLMResponse = client.complete(role, [{"role": "user", "content": prompt}])
         except GroundtruthError as exc:
+            if is_transient(exc):
+                raise  # handled by run()'s transient branch -> worker retry (#28)
             raise _StageFailureError("llm", str(exc), rollback=True) from exc
         acc.add_tokens(role, response)
         return response
