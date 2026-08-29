@@ -42,6 +42,7 @@ pythonpath = ["src"]
 addopts = "-q --strict-markers"
 markers = [
     "integration: touches the filesystem, git, or a real service",
+    "eval_live: golden-eval case run against a real LLM (opt-in, needs GT_EVAL_MODEL_BASE_URL)",
 ]
 asyncio_mode = "auto"
 
