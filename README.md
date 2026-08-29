@@ -46,6 +46,27 @@ open http://localhost:8000/               # web UI;  /health is unauthenticated
 - The container runs as a non-root user; no secret is baked into any layer.
 - Data survives `docker compose restart` — everything lives in the named volumes.
 
+## Running on Kubernetes
+
+A Helm chart lives in [`charts/groundtruth`](charts/groundtruth). The image and the
+chart are published to GitHub Container Registry on every `v*` tag:
+
+```bash
+helm install gt oci://ghcr.io/psenna/charts/groundtruth --version <x.y.z> \
+  --set-string secret.data.GT_API_KEY=... \
+  --set config.defaults.models.default.base_url=http://your-llm/v1
+```
+
+- One `Deployment` (replica count fixed at 1 — groundtruth is single-writer),
+  `Recreate` strategy, non-root with all capabilities dropped.
+- Two `ReadWriteOnce` PVCs: `state` (`/var/lib/groundtruth`) and `vaults`
+  (`/data`) — the state dir is deliberately outside every vault repo (§5.1).
+- `config.yaml` is a `ConfigMap` rendered from `.Values.config`; secrets are
+  environment variables only (`.Values.secret.existingSecret` or
+  `.Values.secret.data`), referenced by name from the config (§11.4).
+- See [`charts/groundtruth/values.yaml`](charts/groundtruth/values.yaml) for all
+  options (ingress, resources, storage classes, probes).
+
 ## Development
 
 ```bash

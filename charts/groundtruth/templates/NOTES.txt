@@ -1,0 +1,41 @@
+groundtruth is deployed as {{ include "groundtruth.fullname" . }}.
+
+1. One container serves the REST API, the MCP server ({{ .Values.config.server.mcp_endpoint }})
+   and the read-only web UI (/, /ingest, /browse). /health is unauthenticated.
+
+2. Reach it:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if eq .Values.service.type "ClusterIP" }}
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "groundtruth.fullname" . }} 8000:{{ .Values.service.port }}
+   # then open http://localhost:8000/
+{{- else }}
+   kubectl -n {{ .Release.Namespace }} get svc {{ include "groundtruth.fullname" . }}
+{{- end }}
+
+3. Configuration lives in the ConfigMap {{ include "groundtruth.fullname" . }}
+   (edit via `.Values.config`). Secrets are environment variables only — set them
+   through `.Values.secret.existingSecret` or `.Values.secret.data`, and reference
+   them by name in `.Values.config` (e.g. models.default.api_key_env).
+
+{{- if eq .Values.config.server.auth "bearer" }}
+{{- if not .Values.config.server.bearer_token_env }}
+
+WARNING: server.auth is "bearer" but server.bearer_token_env is unset — the
+server will not start. Set it and provide that env var via `.Values.secret`.
+{{- end }}
+{{- end }}
+{{- if or .Values.persistence.state.retainOnDelete .Values.persistence.vaults.retainOnDelete }}
+
+Note: the persistent volume claim(s) are annotated `helm.sh/resource-policy: keep`
+and will survive `helm uninstall`. Delete them by hand to reclaim the storage.
+{{- end }}
+{{- if gt (int .Values.replicaCount) 1 }}
+
+WARNING: replicaCount is {{ .Values.replicaCount }}. groundtruth is single-writer
+(one ReadWriteOnce volume, per-vault git repos). Run exactly one replica.
+{{- end }}

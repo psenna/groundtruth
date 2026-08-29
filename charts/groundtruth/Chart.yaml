@@ -1,0 +1,21 @@
+apiVersion: v2
+name: groundtruth
+description: >-
+  Ingest unstructured text into an Obsidian-compatible vault and answer questions
+  only from what that vault actually contains — with citations, or an explicit refusal.
+type: application
+# version    — the chart's own SemVer, bumped on every chart change.
+# appVersion — the groundtruth release the default image tag points at.
+# The release workflow overwrites both from the pushed git tag.
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/psenna/groundtruth
+sources:
+  - https://github.com/psenna/groundtruth
+maintainers:
+  - name: psenna
+keywords:
+  - obsidian
+  - rag
+  - knowledge-base
+  - mcp

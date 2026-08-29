@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "groundtruth.fullname" . }}
+  labels:
+    {{- include "groundtruth.labels" . | nindent 4 }}
+spec:
+  # Single-writer: one ReadWriteOnce volume, per-vault git repos, a FIFO job
+  # queue. Recreate avoids two pods holding the volume during a rollout.
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "groundtruth.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "groundtruth.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "groundtruth.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: groundtruth
+          image: {{ include "groundtruth.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: GT_CONFIG
+              value: /etc/groundtruth/config.yaml
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if or .Values.secret.existingSecret .Values.secret.data }}
+          envFrom:
+            - secretRef:
+                name: {{ include "groundtruth.secretName" . }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.server.port | default 8000 }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/groundtruth/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/groundtruth
+            - name: vaults
+              mountPath: /data
+            - name: home
+              mountPath: /home/groundtruth
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "groundtruth.fullname" . }}
+        - name: state
+        {{- if .Values.persistence.state.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "groundtruth.statePvcName" . }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+        - name: vaults
+        {{- if .Values.persistence.vaults.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "groundtruth.vaultsPvcName" . }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+        - name: home
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
