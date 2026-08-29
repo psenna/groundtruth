@@ -22,6 +22,7 @@ from ..auth import ANONYMOUS, AuthStrategy, Principal
 from ..errors import GroundtruthError, TransientError
 from ..models import AnswerResult, Refusal
 from ..recovery.format import to_payload
+from .errors import ApiError
 
 _ABS_PATH = re.compile(r"(?:/[\w.\-]+){2,}")
 
@@ -41,17 +42,10 @@ def principal_dependency(auth: AuthStrategy) -> Callable[[Request], Principal]:
     def _resolve(request: Request) -> Principal:
         principal = auth.authenticate(request.headers.get("Authorization"))
         if principal is None:
-            raise _ApiError(401, "authentication required")
+            raise ApiError(401, "authentication required")
         return principal
 
     return _resolve
-
-
-class _ApiError(Exception):
-    def __init__(self, status: int, detail: str) -> None:
-        super().__init__(detail)
-        self.status = status
-        self.detail = detail
 
 
 def create_app(
@@ -75,8 +69,8 @@ def create_app(
     for router in routers:
         app.include_router(router, dependencies=[Depends(require_principal)])
 
-    @app.exception_handler(_ApiError)
-    def _handle_api_error(_request: Request, exc: _ApiError) -> JSONResponse:
+    @app.exception_handler(ApiError)
+    def _handle_api_error(_request: Request, exc: ApiError) -> JSONResponse:
         return JSONResponse(status_code=exc.status, content={"detail": exc.detail})
 
     @app.exception_handler(TransientError)

@@ -69,6 +69,11 @@ class GitRepo:
             )
         return result
 
+    def init(self, *, branch: str = "main") -> None:
+        """``git init`` a fresh repo at this path."""
+        self.path.mkdir(parents=True, exist_ok=True)
+        self._run("init", "-b", branch)
+
     def is_clean(self) -> bool:
         """True iff there are no staged, unstaged or untracked changes (spec §7.1)."""
         return self._run("status", "--porcelain").stdout.strip() == ""
