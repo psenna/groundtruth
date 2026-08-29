@@ -1,0 +1,17 @@
+{% if outcome == "refused" %}
+<div class="refusal" role="status" data-outcome="refused" data-reason="{{ reason }}">
+  <h3>No grounded answer</h3>
+  <p>{{ message }}</p>
+  <p><small>This is a deliberate refusal, not an error: groundtruth only answers from
+  what the vault contains.</small></p>
+</div>
+{% else %}
+<div class="answer" data-outcome="answer">
+  {{ rendered_answer|safe }}
+  {% if citations %}
+  <p class="citations">Sources:
+    {% for c in citations %}<a href="/browse/{{ c.vault }}/{{ c.path }}">[[{{ c.path }}]]</a>{% endfor %}
+  </p>
+  {% endif %}
+</div>
+{% endif %}

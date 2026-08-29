@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Ingest · groundtruth{% endblock %}
+{% block content %}
+<h1>Ingest</h1>
+<form hx-post="/ingest" hx-target="#job" hx-swap="innerHTML">
+  <label>Vault
+    <select name="vault">
+      {% for v in vaults %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+    </select>
+  </label>
+  <p><textarea name="text" placeholder="Paste text to ingest"></textarea></p>
+  <button type="submit">Ingest</button>
+</form>
+<div id="job"></div>
+{% endblock %}
