@@ -27,11 +27,21 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-pyyaml>=6.0",
+    # Build backend, pinned into the lock so an offline `uv sync` against the
+    # DependaProxy wheelhouse can build this project (see scripts/fetch-deps.py).
+    "hatchling>=1.25",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+# Pin resolution to a fixed instant so `uv.lock` is reproducible AND every locked
+# version is old enough to pass DependaProxy's "published >= 7 days ago" gate,
+# which is how `scripts/fetch-deps.py` fills the local wheelhouse. Bump this date
+# deliberately (and only past a 7-day-old release) when picking up new versions.
+exclude-newer = "2026-08-15T00:00:00Z"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/groundtruth"]
