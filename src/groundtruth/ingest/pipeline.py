@@ -89,8 +89,11 @@ class IngestPipeline:
         repo = GitRepo(vault.repo_root)
         acc = _Accum()
 
-        job = self._jobs.create(JobRecord(id=job_id, vault=vault.name, source_sha=sha))
-        job = self._jobs.update(job.transitioned_to(JobState.RUNNING))
+        prior = self._jobs.load(job_id)
+        job = prior or self._jobs.create(JobRecord(id=job_id, vault=vault.name))
+        job = self._jobs.update(
+            job.model_copy(update={"source_sha": sha}).transitioned_to(JobState.RUNNING)
+        )
 
         try:
             self._stage(acc, "clean-tree", lambda: self._require_clean(repo))
