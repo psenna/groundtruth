@@ -25,6 +25,7 @@ from ..config import VaultConfig
 from ..errors import GitConflictError, GroundtruthError, is_transient
 from ..llm.client import LLMResponse
 from ..models import JobRecord, JobState, Note, NoteFrontmatter, SourceRecord, Vault
+from ..observability import log_stage
 from ..retrieval.agent import AgentStatus, run_agent
 from ..retrieval.budget import Budget, BudgetLimits
 from ..retrieval.tools import ReadOnlyTools
@@ -59,6 +60,8 @@ class _StageFailureError(Exception):
 
 @dataclass
 class _Accum:
+    job_id: str = ""
+    vault: str = ""
     tokens: dict[str, int] = field(default_factory=dict)
     timings: dict[str, float] = field(default_factory=dict)
     current: str = "init"
@@ -87,7 +90,7 @@ class IngestPipeline:
         today = today or date.today()
         sha = content_hash(text)
         repo = GitRepo(vault.repo_root)
-        acc = _Accum()
+        acc = _Accum(job_id=job_id, vault=vault.name)
 
         prior = self._jobs.load(job_id)
         job = prior or self._jobs.create(JobRecord(id=job_id, vault=vault.name))
@@ -228,6 +231,9 @@ class IngestPipeline:
                     "error": push_error,
                 }
             )
+            log_stage(
+                job_id, vault.name, "job", "succeeded", commit_sha=commit_sha, tokens=acc.tokens
+            )
             return self._jobs.update(done.transitioned_to(JobState.SUCCEEDED))
 
         except _StageFailureError as failure:
@@ -259,17 +265,21 @@ class IngestPipeline:
                 "token_usage": acc.tokens,
             }
         )
+        log_stage(acc.job_id, acc.vault, stage, "failed", error=message)
         return self._jobs.update(failed.transitioned_to(JobState.FAILED))
 
     # --- stages ----------------------------------------------------------------
 
     def _stage(self, acc: _Accum, name: str, run: Any) -> Any:
         acc.current = name
+        log_stage(acc.job_id, acc.vault, name, "start")
         start = time.monotonic()
         try:
             return run()
         finally:
-            acc.timings[name] = acc.timings.get(name, 0.0) + (time.monotonic() - start)
+            elapsed = time.monotonic() - start
+            acc.timings[name] = acc.timings.get(name, 0.0) + elapsed
+            log_stage(acc.job_id, acc.vault, name, "end", seconds=round(elapsed, 4))
 
     @staticmethod
     def _require_clean(repo: GitRepo) -> None:
