@@ -23,14 +23,28 @@ embeddings, no separate index that can drift from the notes.
 Surfaces: REST API, MCP server (so external agents can query and contribute), and a
 read-only web UI. Editing happens in Obsidian.
 
-## Status
-
-Pre-implementation. The specification is complete and normative:
-
 - **[`docs/requirements.md`](docs/requirements.md)** — the spec (16 sections, 11 ADRs)
 - **[`CLAUDE.md`](CLAUDE.md)** — contributor and agent guide: commands, TDD protocol, invariants
 
-Work is tracked as GitHub issues across milestones M1–M9. Start with M1.
+## Running with Docker
+
+One image serves the API, the MCP server (`/mcp`) and the web UI (`/`, `/ingest`,
+`/browse`) from a single container (spec §4.2).
+
+```bash
+cp config.yaml.example config.yaml        # then edit: model base_url, vaults, auth
+export GT_API_KEY=...                     # secrets are env vars only (§11.4)
+docker compose up --build
+open http://localhost:8000/               # web UI;  /health is unauthenticated
+```
+
+- **`state:/var/lib/groundtruth`** — job records, source index, vault registry,
+  optional LLM logs. A named volume, deliberately **outside** any vault repo (§5.1).
+- **`vaults:/data`** — vault repos. Put each vault at `/data/<name>` and list it
+  under `vaults:` in `config.yaml`, or adopt one at runtime via `POST /vaults`.
+- Commits carry the dedicated `groundtruth` git identity, configured in the image.
+- The container runs as a non-root user; no secret is baked into any layer.
+- Data survives `docker compose restart` — everything lives in the named volumes.
 
 ## Development
 

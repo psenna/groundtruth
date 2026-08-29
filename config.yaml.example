@@ -1,0 +1,38 @@
+# groundtruth global config (spec §11.2). Copy to ./config.yaml before `docker compose up`.
+# NEVER put a secret here — reference an environment variable by name.
+
+server:
+  bind: 0.0.0.0
+  port: 8000
+  auth: none              # none | bearer
+  mcp_endpoint: /mcp
+  # bearer_token_env: GT_BEARER_TOKEN   # required when auth: bearer
+
+state_dir: /var/lib/groundtruth   # a named volume, outside every vault repo
+job_retention_days: 7
+llm_logging: false                # prompts contain ingested content (§12.4)
+
+vaults:                            # registry seed: name -> repo root under /data
+  work: /data/work
+
+defaults:
+  raw_archive: true
+  auto_push: false
+  allow_schema_writes: false
+  models:
+    default:
+      base_url: http://host.docker.internal:11434/v1
+      model: qwen2.5:14b
+      api_key_env: GT_API_KEY
+    tag:    {model: qwen2.5:7b}
+    reduce: {model: qwen2.5:14b}
+    answer: {model: qwen2.5:32b}
+  limits:
+    max_notes_per_ingest: 10
+    max_note_bytes: 65536
+    max_tool_calls: 30
+    max_wall_clock_s: 60
+    grep_max_matches: 50
+    grep_max_bytes: 65536
+    read_max_bytes: 32768
+    vocab_max_bytes: 4096

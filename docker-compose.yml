@@ -1,0 +1,24 @@
+services:
+  groundtruth:
+    build: .
+    image: groundtruth:latest
+    ports:
+      - "8000:8000"
+    environment:
+      # Secrets arrive via environment variables ONLY (spec §11.4). config.yaml
+      # references them by name (e.g. models.default.api_key_env: GT_API_KEY).
+      GT_API_KEY: "${GT_API_KEY:-}"
+      GT_BEARER_TOKEN: "${GT_BEARER_TOKEN:-}"
+    volumes:
+      # The state dir — job records, source index, vault registry, LLM logs.
+      # A named volume, deliberately OUTSIDE any vault repo (spec §5.1).
+      - state:/var/lib/groundtruth
+      # Vault repos. Mount one named volume (or bind mount) per vault under /data.
+      - vaults:/data
+      # The global config.
+      - ./config.yaml:/etc/groundtruth/config.yaml:ro
+    restart: unless-stopped
+
+volumes:
+  state:
+  vaults:
