@@ -16,7 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.2"]
+# mcp 2.x renamed FastMCP -> MCPServer and changed the transport API; §10.2 and
+# the MCP issues target the 1.x FastMCP surface. Pin to 1.x until a deliberate port.
+mcp = ["mcp>=1.9,<2"]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
