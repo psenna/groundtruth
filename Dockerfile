@@ -7,6 +7,10 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --all-extras --no-install-project
+# README.md is packaging metadata (pyproject `readme = "README.md"`), so the
+# hatchling build backend needs it present when the second sync builds the
+# project. Copied after the deps-only layer so a README edit doesn't bust it.
+COPY README.md ./
 COPY src ./src
 RUN uv sync --frozen --no-dev --all-extras
 

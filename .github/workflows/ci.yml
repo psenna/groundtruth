@@ -22,6 +22,26 @@ jobs:
       - run: uv run --frozen mypy src/
       - run: uv run --frozen pytest
 
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Build only (no push) so a Dockerfile regression fails a PR instead of a
+      # release. The release workflow is the only thing that publishes.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: groundtruth:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test the image
+        run: |
+          docker run --rm groundtruth:ci python -c "import groundtruth; print(groundtruth.__version__)"
+          docker run --rm groundtruth:ci python -c "from groundtruth.main import build_app"
+
   helm:
     runs-on: ubuntu-latest
     steps:
