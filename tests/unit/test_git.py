@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 
 from groundtruth.errors import GitConflictError, TerminalError, is_transient
+from groundtruth.ingest.commit_message import format_commit_message
 from groundtruth.storage.git import (
     GROUNDTRUTH_EMAIL,
     GROUNDTRUTH_NAME,
     GitPushError,
     GitRepo,
-    format_commit_message,
 )
 
 pytestmark = pytest.mark.integration
@@ -89,29 +89,6 @@ class TestCommit:
         repo.add()
         repo.commit(msg)
         assert _git(repo.path, "log", "-1", "--format=%B").strip() == msg.strip()
-
-
-class TestFormatCommitMessage:
-    def test_matches_spec_7_9(self) -> None:
-        msg = format_commit_message(
-            vault="work",
-            subject="Acme Corp",
-            created=["Acme Corp", "Widget Platform"],
-            updated=["Vendor Contracts"],
-            tags=["company", "vendor"],
-            source_sha="a1b2c3d4e5f6",
-            job_id="01J8X",
-            excerpt="short excerpt",
-        )
-        lines = msg.splitlines()
-        assert lines[0] == "ingest(work): Acme Corp"
-        assert lines[1] == ""
-        assert "notes:" in msg and "created Acme Corp, Widget Platform" in msg
-        assert "updated Vendor Contracts" in msg
-        assert "tags:    company, vendor" in msg
-        assert "source:  sha256:a1b2c3d4e5f6" in msg
-        assert "job:     01J8X" in msg
-        assert msg.rstrip().endswith("short excerpt")
 
 
 class TestRollback:

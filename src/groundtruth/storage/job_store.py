@@ -15,16 +15,8 @@ from typing import Any
 
 from ..errors import GroundtruthError
 from ..models import TERMINAL_JOB_STATES, JobRecord
+from ..redaction import contains_secret
 
-#: Substrings/patterns that indicate a leaked credential in a would-be job record.
-_SECRET_PATTERNS = (
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    re.compile(r"\bsk-[A-Za-z0-9]{16,}"),
-    re.compile(r"\bghp_[A-Za-z0-9]{20,}"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}"),
-    re.compile(r"[Bb]earer\s+[A-Za-z0-9._~+/-]{20,}"),
-)
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -33,13 +25,10 @@ class JobStoreError(GroundtruthError):
 
 
 def _assert_no_secrets(record: JobRecord) -> None:
-    blob = json.dumps(record.model_dump(mode="json"))
-    for pattern in _SECRET_PATTERNS:
-        if pattern.search(blob):
-            raise JobStoreError(
-                "job record appears to contain a secret; secrets are environment "
-                "variables only (§11.4)"
-            )
+    if contains_secret(json.dumps(record.model_dump(mode="json"))):
+        raise JobStoreError(
+            "job record appears to contain a secret; secrets are environment variables only (§11.4)"
+        )
 
 
 class JobStore:

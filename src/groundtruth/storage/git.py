@@ -10,7 +10,6 @@ never mutated.
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Sequence
 from pathlib import Path
 
 from ..errors import GitConflictError, GroundtruthError, TransientError
@@ -117,40 +116,6 @@ class GitRepo:
             )
 
 
-def _join(names: Sequence[str]) -> str:
-    return ", ".join(names)
-
-
-def format_commit_message(
-    *,
-    vault: str,
-    subject: str,
-    created: Sequence[str],
-    updated: Sequence[str],
-    tags: Sequence[str],
-    source_sha: str,
-    job_id: str,
-    excerpt: str,
-) -> str:
-    """Render a commit message in the §7.9 format."""
-    notes_parts = []
-    if created:
-        notes_parts.append(f"created {_join(created)}")
-    if updated:
-        notes_parts.append(f"updated {_join(updated)}")
-    notes_line = " · ".join(notes_parts) if notes_parts else "none"
-    return (
-        f"ingest({vault}): {subject}\n"
-        f"\n"
-        f"notes:   {notes_line}\n"
-        f"tags:    {_join(tags)}\n"
-        f"source:  sha256:{source_sha}\n"
-        f"job:     {job_id}\n"
-        f"\n"
-        f"{excerpt.strip()}\n"
-    )
-
-
 __all__ = [
     "GROUNDTRUTH_EMAIL",
     "GROUNDTRUTH_NAME",
@@ -158,5 +123,4 @@ __all__ = [
     "GitNetworkError",
     "GitPushError",
     "GitRepo",
-    "format_commit_message",
 ]
