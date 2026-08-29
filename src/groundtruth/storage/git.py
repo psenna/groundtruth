@@ -87,6 +87,11 @@ class GitRepo:
         self._run(*_IDENTITY_ARGS, "commit", "-m", message)
         return self.head_sha()
 
+    def amend(self) -> str:
+        """Fold currently-staged changes into HEAD, keeping its message. Returns the new sha."""
+        self._run(*_IDENTITY_ARGS, "commit", "--amend", "--no-edit")
+        return self.head_sha()
+
     def rollback(self) -> None:
         """Discard every change since HEAD (spec §7.7). Safe only after ``is_clean()``."""
         self._run("reset", "--hard", "HEAD")
