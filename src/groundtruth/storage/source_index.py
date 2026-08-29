@@ -72,5 +72,9 @@ class SourceIndex:
         with self._locked_write(vault) as index:
             return index.pop(sha256, None) is not None
 
+    def drop(self, vault: str) -> None:
+        """Delete a vault's entire index (deregistration, §13.2)."""
+        self._path(vault).unlink(missing_ok=True)
+
 
 __all__ = ["SourceIndex"]
