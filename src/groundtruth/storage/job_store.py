@@ -62,6 +62,17 @@ class JobStore:
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
         return JobRecord.model_validate(data)
 
+    def quarantine(self, job_id: str, *, reason: str = "") -> Path:
+        """Move an unreadable record to ``jobs/quarantine/`` so startup can continue."""
+        path = self._path(job_id)
+        dest_dir = self._dir / "quarantine"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / path.name
+        path.replace(dest)
+        if reason:
+            (dest_dir / f"{job_id}.reason.txt").write_text(reason, encoding="utf-8")
+        return dest
+
     def create(self, record: JobRecord) -> JobRecord:
         if self._path(record.id).exists():
             raise JobStoreError(f"job {record.id!r} already exists")
@@ -92,7 +103,10 @@ class JobStore:
         cutoff = (now or datetime.now()) - timedelta(days=self._retention_days)
         removed: list[str] = []
         for path in sorted(self._dir.glob("*.json")) if self._dir.is_dir() else []:
-            record = self.load(path.stem)
+            try:
+                record = self.load(path.stem)
+            except (json.JSONDecodeError, ValueError):
+                continue  # unreadable — leave it for startup recovery to quarantine
             if record is None or record.state not in TERMINAL_JOB_STATES:
                 continue
             if datetime.fromtimestamp(path.stat().st_mtime) < cutoff:
