@@ -49,10 +49,11 @@ open http://localhost:8000/               # web UI;  /health is unauthenticated
 ## Running on Kubernetes
 
 A Helm chart lives in [`charts/groundtruth`](charts/groundtruth). The image and the
-chart are published to GitHub Container Registry on every `v*` tag:
+chart are published to GitHub Container Registry on every `v*` tag
+(see [`docs/releases/`](docs/releases)):
 
 ```bash
-helm install gt oci://ghcr.io/psenna/charts/groundtruth --version <x.y.z> \
+helm install gt oci://ghcr.io/psenna/charts/groundtruth --version 0.0.1 \
   --set-string secret.data.GT_API_KEY=... \
   --set config.defaults.models.default.base_url=http://your-llm/v1
 ```
