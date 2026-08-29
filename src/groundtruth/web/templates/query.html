@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Query · groundtruth{% endblock %}
+{% block content %}
+<h1>Query</h1>
+<form hx-post="/query" hx-target="#result" hx-swap="innerHTML">
+  <label>Vault
+    <select name="vault">
+      {% for v in vaults %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+    </select>
+  </label>
+  <p><textarea name="question" placeholder="Ask a question about this vault"></textarea></p>
+  <button type="submit">Ask</button>
+</form>
+<div id="result"></div>
+{% endblock %}

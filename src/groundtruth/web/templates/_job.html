@@ -1,0 +1,15 @@
+{% set terminal = job.state in ("succeeded", "failed") %}
+<div id="job-status"
+     data-job-id="{{ job.id }}"
+     data-state="{{ job.state }}"
+     {% if not terminal %}hx-get="/jobs/{{ job.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML"{% endif %}>
+  <p>Job <code>{{ job.id }}</code> — <strong>{{ job.state }}</strong>
+     {% if job.deduplicated %}<em>(deduplicated — matched a prior ingest)</em>{% endif %}</p>
+  {% if job.state == "failed" %}
+  <p class="job-failed">Failed at stage <strong>{{ job.failure_stage }}</strong>:
+     {{ job.error }}</p>
+  {% elif job.state == "succeeded" and job.commit_sha %}
+  <p>Committed <code>{{ job.commit_sha[:12] }}</code>;
+     created {{ job.notes_created|length }}, updated {{ job.notes_updated|length }} note(s).</p>
+  {% endif %}
+</div>
