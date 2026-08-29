@@ -13,13 +13,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..config import load_vault_config
+from ..config import VaultConfig, load_vault_config
 from ..ingest.pipeline import IngestPipeline
+from ..ingest.schema import SchemaError, load_schema
 from ..jobs.queue import JobQueue
 from ..jobs.retry import retrying_runner
 from ..llm.client import LLMClient
-from ..models import JobRecord, JobState, Vault
+from ..models import AnswerResult, JobRecord, JobState, Note, Refusal, Vault
+from ..recovery.agent import recover
+from ..recovery.grounding import check_grounding
+from ..retrieval.agent import AgentStatus
 from ..storage.job_store import JobStore
+from ..storage.notes import NoteNotFoundError, NoteRepository
+from ..storage.paths import UnsafePathError
 from ..storage.registry import VaultRegistry
 from ..storage.source_index import SourceIndex
 from .errors import problem
@@ -78,6 +84,59 @@ class Services:
         if record is None:
             problem(404, f"no job {job_id!r}")
         return record
+
+    # --- read surface ----------------------------------------------------
+
+    def _vault_and_config(self, vault_name: str) -> tuple[Vault, VaultConfig]:
+        vault = self.registry.get(vault_name)
+        if vault is None:
+            problem(422, f"vault {vault_name!r} is not registered")
+        config = load_vault_config(
+            vault.name,
+            cli_config=self.cli_config,
+            environ=self.environ,
+            repo_root=vault.repo_root,
+        )
+        return vault, config
+
+    def query(self, vault_name: str, question: str) -> AnswerResult | Refusal:
+        vault, config = self._vault_and_config(vault_name)
+        client = self.client_override or LLMClient(config.models, environ=self.environ)
+        outcome = recover(vault, question, client, limits=config.limits)
+
+        if outcome.status is AgentStatus.EXHAUSTED:
+            return Refusal(reason="budget_exhausted")
+        if outcome.status is AgentStatus.FAILED:
+            problem(503, "the recovery agent failed to run")
+
+        answer = AnswerResult(text=outcome.final_text or "", citations=[])
+        # The grounding check runs on every query path; there is no way past it.
+        return check_grounding(answer, vault)
+
+    def list_notes(
+        self, vault_name: str, *, tag: str | None = None, path_prefix: str | None = None
+    ) -> list[Note]:
+        vault, _ = self._vault_and_config(vault_name)
+        notes = NoteRepository(vault.vault_dir).list_notes(tag=tag)
+        if path_prefix:
+            notes = [n for n in notes if n.path.startswith(path_prefix)]
+        return notes
+
+    def read_note(self, vault_name: str, path: str) -> Note:
+        vault, _ = self._vault_and_config(vault_name)
+        try:
+            return NoteRepository(vault.vault_dir).read(path)
+        except UnsafePathError:
+            problem(400, "note path is not allowed")
+        except NoteNotFoundError:
+            problem(404, f"no note at {path!r}")
+
+    def read_schema(self, vault_name: str) -> str:
+        vault, _ = self._vault_and_config(vault_name)
+        try:
+            return load_schema(vault.vault_dir).raw
+        except SchemaError as exc:
+            problem(422, str(exc))
 
     # --- internals ---------------------------------------------------------
 
