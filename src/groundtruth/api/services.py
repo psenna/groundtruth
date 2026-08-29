@@ -20,6 +20,7 @@ from ..jobs.queue import JobQueue
 from ..jobs.retry import retrying_runner
 from ..llm.client import LLMClient
 from ..models import AnswerResult, JobRecord, JobState, Note, Refusal, Vault
+from ..observability import LLMCallLog, LoggingLLMClient
 from ..recovery.agent import recover
 from ..recovery.grounding import check_grounding
 from ..retrieval.agent import AgentStatus
@@ -48,6 +49,8 @@ class Services:
     cli_config: Path | None = None
     environ: Mapping[str, str] = field(default_factory=lambda: dict(os.environ))
     client_override: Any = None  # a stand-in LLM client for tests
+    #: LLM prompt/response logging to <state-dir>/llm/<job-id>.jsonl. Off by default (§12.4).
+    llm_logging: bool = False
 
     _pending: dict[str, _PendingIngest] = field(default_factory=dict, init=False)
     queue: JobQueue = field(init=False)
@@ -163,6 +166,8 @@ class Services:
             repo_root=pending.vault.repo_root,
         )
         client = self.client_override or LLMClient(config.models, environ=self.environ)
+        if self.llm_logging:
+            client = LoggingLLMClient(client, LLMCallLog(self.state_dir, enabled=True), job_id)
         try:
             return self.pipeline.run(
                 job_id=job_id,
