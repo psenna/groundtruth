@@ -92,6 +92,11 @@ class GitRepo:
         self._run(*_IDENTITY_ARGS, "commit", "-m", message)
         return self.head_sha()
 
+    def commit_paths(self, paths: list[str], message: str) -> str:
+        """Commit only ``paths``, ignoring anything else staged or dirty. Returns the sha."""
+        self._run(*_IDENTITY_ARGS, "commit", "-m", message, "--", *paths)
+        return self.head_sha()
+
     def amend(self) -> str:
         """Fold currently-staged changes into HEAD, keeping its message. Returns the new sha."""
         self._run(*_IDENTITY_ARGS, "commit", "--amend", "--no-edit")

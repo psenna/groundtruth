@@ -15,7 +15,7 @@ from typing import Any
 
 from ..config import VaultConfig, load_vault_config
 from ..ingest.pipeline import IngestPipeline
-from ..ingest.schema import SchemaError, load_schema
+from ..ingest.schema import SchemaError, load_schema, write_schema
 from ..jobs.queue import JobQueue
 from ..jobs.retry import retrying_runner
 from ..llm.client import LLMClient
@@ -23,6 +23,7 @@ from ..models import AnswerResult, JobRecord, JobState, Note, Refusal, Vault
 from ..recovery.agent import recover
 from ..recovery.grounding import check_grounding
 from ..retrieval.agent import AgentStatus
+from ..storage.git import GitRepo
 from ..storage.job_store import JobStore
 from ..storage.notes import NoteNotFoundError, NoteRepository
 from ..storage.paths import UnsafePathError
@@ -137,6 +138,17 @@ class Services:
             return load_schema(vault.vault_dir).raw
         except SchemaError as exc:
             problem(422, str(exc))
+
+    def list_vaults(self) -> list[Vault]:
+        return self.registry.list_vaults()
+
+    def update_schema(self, vault_name: str, markdown: str, rationale: str) -> None:
+        """The only write path to schema.md anywhere (ADR-12). Gated by allow_schema_writes."""
+        vault, config = self._vault_and_config(vault_name)
+        write_schema(vault.vault_dir, markdown, allowed=config.allow_schema_writes)
+        GitRepo(vault.repo_root).commit_paths(
+            [f"{vault.name}/schema.md"], f"schema({vault.name}): {rationale}"
+        )
 
     # --- internals ---------------------------------------------------------
 
