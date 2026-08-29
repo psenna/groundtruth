@@ -29,6 +29,10 @@ class ReadOnlyTools:
         self._root = Path(vault_root).resolve()
         self.budget = budget
 
+    @property
+    def schemas(self) -> list[dict[str, Any]]:
+        return self.TOOL_SCHEMAS
+
     def _resolve(self, path: str) -> Path:
         if path in ("", "."):
             return self._root
