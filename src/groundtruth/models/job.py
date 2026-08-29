@@ -52,6 +52,11 @@ class JobRecord(BaseModel):
     #: On a dedup short-circuit: the id of the prior ingest job (spec §7.11).
     dedup_of: str | None = None
 
+    #: Retry accounting (spec §12.2). ``attempts`` counts every run of the job;
+    #: ``attempt_errors`` holds the error from each failed attempt, in order.
+    attempts: int = 1
+    attempt_errors: list[str] = Field(default_factory=list)
+
     def can_transition_to(self, new_state: JobState) -> bool:
         return new_state in LEGAL_JOB_TRANSITIONS[self.state]
 
