@@ -50,3 +50,28 @@ class VaultConfig(BaseModel):
     #: Keyed by role: ``default``, ``tag``, ``reduce``, ``answer``.
     models: dict[str, ModelConfig]
     limits: Limits
+
+
+class ServerConfig(BaseModel):
+    """The ``server:`` block of ``config.yaml`` (spec §11.2)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    bind: str = "127.0.0.1"
+    port: int = 8000
+    auth: str = "none"
+    mcp_endpoint: str = "/mcp"
+    bearer_token_env: str | None = None
+
+
+class GlobalConfig(BaseModel):
+    """The parts of ``config.yaml`` the server process needs at startup (spec §11.2)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    server: ServerConfig = ServerConfig()
+    state_dir: str
+    job_retention_days: int = 7
+    #: Registry seed: ``name -> repo root``.
+    vaults: dict[str, str] = {}
+    llm_logging: bool = False

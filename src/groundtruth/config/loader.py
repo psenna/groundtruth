@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from .defaults import BUILTIN_DEFAULTS
-from .schema import ConfigError, VaultConfig
+from .schema import ConfigError, GlobalConfig, VaultConfig
 
 _DEFAULT_GLOBAL_PATH = Path("/etc/groundtruth/config.yaml")
 
@@ -65,6 +65,21 @@ def _scan_for_secrets(node: Any, path: str = "") -> None:
     elif isinstance(node, list):
         for i, item in enumerate(node):
             _scan_for_secrets(item, f"{path}[{i}]")
+
+
+def load_global_config(
+    *,
+    cli_config: Path | str | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> GlobalConfig:
+    """Load the global ``config.yaml`` the server needs at startup (spec §11.2)."""
+    environ = os.environ if environ is None else environ
+    path = resolve_global_config_path(cli_config=cli_config, environ=environ)
+    data = _load_yaml_mapping(path)
+    _scan_for_secrets(data)
+    if "state_dir" not in data:
+        raise ConfigError(f"{path}: 'state_dir' is required")
+    return GlobalConfig.model_validate(data)
 
 
 def _load_yaml_mapping(path: Path) -> dict[str, Any]:
