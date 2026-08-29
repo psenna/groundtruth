@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Browse · groundtruth{% endblock %}
+{% block content %}
+{% macro render_tree(node) %}
+<ul>
+  {% for name, child in node.dirs.items() %}
+  <li>{{ name }}/{{ render_tree(child) }}</li>
+  {% endfor %}
+  {% for n in node.notes %}
+  <li><a href="/browse/{{ vault }}/{{ n.path }}">{{ n.name }}</a></li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
+<h1>Browse <small>(read-only — edit in Obsidian)</small></h1>
+
+{% if not vault %}
+<ul>
+  {% for v in vaults %}<li><a href="/browse/{{ v }}">{{ v }}</a></li>{% endfor %}
+</ul>
+{% else %}
+<div style="display:flex; gap:2rem;">
+  <nav style="min-width:14rem;">
+    <strong>{{ vault }}</strong>
+    {{ render_tree(tree) }}
+  </nav>
+  <article style="flex:1;">
+    {% if note %}
+    <h2>{{ note.frontmatter.title }}</h2>
+    <table>
+      <tr><th>tags</th><td>{{ note.frontmatter.tags|join(', ') }}</td></tr>
+      <tr><th>created</th><td>{{ note.frontmatter.created }}</td></tr>
+      <tr><th>updated</th><td>{{ note.frontmatter.updated }}</td></tr>
+      <tr><th>sources</th><td>{{ note.frontmatter.sources|length }} source hash(es)</td></tr>
+    </table>
+    <div class="note-body">{{ note.html|safe }}</div>
+    {% else %}
+    <p>Select a note.</p>
+    {% endif %}
+  </article>
+</div>
+{% endif %}
+{% endblock %}
