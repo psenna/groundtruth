@@ -9,23 +9,39 @@ all-or-nothing (§7.7) achievable.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
+from ..models import NoteFrontmatter
 from ..storage.paths import UnsafePathError, resolve_in_vault, sanitize_title
 
 
 @dataclass(frozen=True)
 class PendingNote:
-    """A buffered create or update. Frontmatter is built later by the system, not the model."""
+    """A buffered create or update.
+
+    Frontmatter is built by the system (never the model) and attached before
+    validation — ``frontmatter`` is ``None`` while the note is still being drafted.
+    """
 
     path: str
     body: str
     is_new: bool
     folder: str | None = None
     title: str | None = None
+    frontmatter: NoteFrontmatter | Mapping[str, Any] | None = None
+
+    def with_frontmatter(self, frontmatter: NoteFrontmatter | Mapping[str, Any]) -> PendingNote:
+        return PendingNote(
+            path=self.path,
+            body=self.body,
+            is_new=self.is_new,
+            folder=self.folder,
+            title=self.title,
+            frontmatter=frontmatter,
+        )
 
 
 @dataclass

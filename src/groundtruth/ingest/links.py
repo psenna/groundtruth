@@ -12,7 +12,7 @@ import re
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
-_FENCED_CODE = re.compile(r"(?ms)^[ \t]*(```|~~~).*?^[ \t]*\1[ \t]*$")
+_FENCE_MARKER = re.compile(r"^[ \t]*(```+|~~~+)")
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 _WIKILINK = re.compile(r"\[\[([^\[\]|]+?)(?:\|([^\[\]]*))?\]\]")
 
@@ -30,8 +30,27 @@ class Dangling:
 
 
 def _strip_code(text: str) -> str:
-    text = _FENCED_CODE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
-    return _INLINE_CODE.sub("", text)
+    """Blank out fenced and inline code so links inside them are ignored.
+
+    Fence handling is a linear line scan — a regex spanning ``.*?`` across
+    newlines backtracks quadratically on an unterminated fence in model output.
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    fence: str | None = None
+    for line in lines:
+        marker = _FENCE_MARKER.match(line)
+        if fence is None and marker:
+            fence = marker.group(1)[0]  # ` or ~
+            out.append("")
+            continue
+        if fence is not None:
+            out.append("")
+            if marker and marker.group(1)[0] == fence:
+                fence = None
+            continue
+        out.append(line)
+    return _INLINE_CODE.sub("", "\n".join(out))
 
 
 def extract_links(body: str) -> list[Link]:
