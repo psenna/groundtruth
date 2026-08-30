@@ -2,7 +2,7 @@
 <div id="job-status"
      data-job-id="{{ job.id }}"
      data-state="{{ job.state }}"
-     {% if not terminal %}hx-get="/jobs/{{ job.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML"{% endif %}>
+     {% if not terminal %}hx-get="/ui/jobs/{{ job.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML"{% endif %}>
   <p>Job <code>{{ job.id }}</code> — <strong>{{ job.state }}</strong>
      {% if job.deduplicated %}<em>(deduplicated — matched a prior ingest)</em>{% endif %}</p>
   {% if job.state == "failed" %}

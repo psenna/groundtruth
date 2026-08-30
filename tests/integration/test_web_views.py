@@ -67,17 +67,17 @@ class TestIngestView:
 
     def test_submit_shows_a_job_id_and_polls(self, client) -> None:  # type: ignore[no-untyped-def]
         c = client([])
-        html = c.post("/ingest", data={"vault": "work", "text": "hello"}).text
+        html = c.post("/ui/ingest", data={"vault": "work", "text": "hello"}).text
         assert "Job <code>" in html
-        assert 'hx-get="/jobs/' in html  # progress polling
+        assert 'hx-get="/ui/jobs/' in html  # progress polling
 
     def test_failed_job_shows_stage_and_reason(self, client, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
         c = client([])
         (tmp_path / "repo" / "work" / "dirty.md").write_text("x\n")  # dirty tree -> job fails
-        job_html = c.post("/ingest", data={"vault": "work", "text": "hello"}).text
+        job_html = c.post("/ui/ingest", data={"vault": "work", "text": "hello"}).text
         job_id = job_html.split("Job <code>")[1].split("</code>")[0]
         for _ in range(50):  # poll like htmx would, until terminal
-            status = c.get(f"/jobs/{job_id}").text
+            status = c.get(f"/ui/jobs/{job_id}").text
             if "running" not in status:
                 break
             time.sleep(0.05)
@@ -88,13 +88,13 @@ class TestIngestView:
 class TestQueryView:
     def test_answer_renders_with_citation_links_into_browse(self, client) -> None:  # type: ignore[no-untyped-def]
         c = client([LLMResponse(role="answer", model="m", text="Founded 1996. [[companies/Acme]]")])
-        html = c.post("/query", data={"vault": "work", "question": "when?"}).text
+        html = c.post("/ui/query", data={"vault": "work", "question": "when?"}).text
         assert 'data-outcome="answer"' in html
         assert 'href="/browse/work/companies/Acme"' in html
 
     def test_refusal_renders_as_a_refusal_not_an_error(self, client) -> None:  # type: ignore[no-untyped-def]
         c = client([LLMResponse(role="answer", model="m", text="the vault does not contain this")])
-        html = c.post("/query", data={"vault": "work", "question": "revenue?"}).text
+        html = c.post("/ui/query", data={"vault": "work", "question": "revenue?"}).text
         assert 'class="refusal"' in html
         assert 'data-outcome="refused"' in html
         assert 'class="error"' not in html
@@ -103,7 +103,7 @@ class TestQueryView:
     def test_both_refusal_reasons_have_their_own_text(self, client) -> None:  # type: ignore[no-untyped-def]
         no_ev = (
             client([LLMResponse(role="answer", model="m", text="nothing here")])
-            .post("/query", data={"vault": "work", "question": "q"})
+            .post("/ui/query", data={"vault": "work", "question": "q"})
             .text
         )
         assert "does not contain information" in no_ev
@@ -116,7 +116,7 @@ class TestQueryView:
                 )
             ]
         )
-        html = c.post("/query", data={"vault": "work", "question": "x"}).text
+        html = c.post("/ui/query", data={"vault": "work", "question": "x"}).text
         assert "<script>alert(1)</script>" not in html
         assert "&lt;script&gt;" in html
 

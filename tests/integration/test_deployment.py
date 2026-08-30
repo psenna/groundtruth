@@ -56,6 +56,16 @@ class TestComposedApp:
             )
             assert mcp.status_code in (200, 400)  # mounted (not 404)
 
+            # The web htmx form endpoints must not be shadowed by the JSON API's
+            # POST /query, POST /ingest, GET /jobs/{id} (same app, same paths):
+            # a form body posted to a JSON route 422s.
+            job = client.post("/ui/ingest", data={"vault": "work", "text": "hello"})
+            assert job.status_code == 200 and "Job <code>" in job.text  # form -> HTML
+            form_query = client.post("/ui/query", data={"vault": "work", "question": "hi?"})
+            assert form_query.status_code != 422  # reached the form handler (LLM may be down)
+            # the JSON API still owns the bare paths
+            assert client.post("/ingest", json={"vault": "work", "text": "hi"}).status_code == 200
+
     def test_health_needs_no_auth_even_with_bearer(self, tmp_path: Path, config_file: Path) -> None:
         cfg = yaml.safe_load(config_file.read_text())
         cfg["server"] = {"auth": "bearer", "bearer_token_env": "GT_BEARER", "mcp_endpoint": "/mcp"}

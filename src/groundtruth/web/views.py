@@ -42,6 +42,9 @@ def _render_answer_html(vault: str, text: str) -> str:
 
 
 def build_web_router(services: Services) -> APIRouter:
+    # The htmx form/poll endpoints live under /ui/ so they never collide with the
+    # JSON API's POST /query, POST /ingest and GET /jobs/{id} — both routers are
+    # mounted on the same app, and a form body posted to the JSON route 422s.
     router = APIRouter(include_in_schema=False)
 
     def _vaults() -> list[str]:
@@ -55,19 +58,19 @@ def build_web_router(services: Services) -> APIRouter:
     def ingest_view(request: Request) -> Any:
         return _TEMPLATES.TemplateResponse(request, "ingest.html", {"vaults": _vaults()})
 
-    @router.post("/ingest", response_class=HTMLResponse)
+    @router.post("/ui/ingest", response_class=HTMLResponse)
     def submit_ingest(request: Request, vault: str = Form(...), text: str = Form(...)) -> Any:
         result = services.submit_ingest(vault, text, "web", wait=False, timeout=0.0)
         job_id = result if isinstance(result, str) else result.id
         job = JobResponse.of(services.get_job(job_id)).model_dump()
         return _TEMPLATES.TemplateResponse(request, "_job.html", {"job": job})
 
-    @router.get("/jobs/{job_id}", response_class=HTMLResponse)
+    @router.get("/ui/jobs/{job_id}", response_class=HTMLResponse)
     def job_status(request: Request, job_id: str) -> Any:
         job = JobResponse.of(services.get_job(job_id)).model_dump()
         return _TEMPLATES.TemplateResponse(request, "_job.html", {"job": job})
 
-    @router.post("/query", response_class=HTMLResponse)
+    @router.post("/ui/query", response_class=HTMLResponse)
     def submit_query(request: Request, vault: str = Form(...), question: str = Form(...)) -> Any:
         result = services.query(vault, question)
         context: dict[str, Any]
