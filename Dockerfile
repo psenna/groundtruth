@@ -20,8 +20,8 @@ FROM python:3.12-slim AS runtime
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
- && groupadd --system groundtruth \
- && useradd --system --gid groundtruth --home /home/groundtruth --create-home groundtruth
+ && groupadd --system --gid 1000 groundtruth \
+ && useradd --system --uid 1000 --gid 1000 --home /home/groundtruth --create-home groundtruth
 
 # Commits carry the dedicated groundtruth identity (spec §7.9).
 RUN git config --system user.name  "groundtruth" \
@@ -37,7 +37,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 RUN mkdir -p /var/lib/groundtruth /data \
  && chown -R groundtruth:groundtruth /var/lib/groundtruth /data
 
-USER groundtruth
+# Numeric so Kubernetes can verify non-root without resolving /etc/passwd
+# (`runAsNonRoot: true` rejects a name-only USER with CreateContainerConfigError).
+USER 1000:1000
 WORKDIR /app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \

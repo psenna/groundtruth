@@ -29,11 +29,14 @@ podSecurityContext:
   fsGroup: 1000
   fsGroupChangePolicy: OnRootMismatch
 
-# -- Container-level security context. The image already runs as a non-root
-# system user; this hardens it further. readOnlyRootFilesystem is left off
-# because git writes under $HOME and the venv.
+# -- Container-level security context. The image runs as numeric uid/gid 1000
+# (matching fsGroup above); pinning runAsUser/runAsGroup here keeps the pod
+# valid even on an older image whose USER was a name. readOnlyRootFilesystem is
+# left off because git writes under $HOME and the venv.
 securityContext:
   runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
   allowPrivilegeEscalation: false
   capabilities:
     drop:

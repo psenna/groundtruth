@@ -74,8 +74,9 @@ class TestComposedApp:
 class TestDockerArtifacts:
     def test_dockerfile_runs_as_non_root_and_configures_git_identity(self) -> None:
         text = (_REPO / "Dockerfile").read_text()
-        assert "USER groundtruth" in text
-        assert "useradd" in text and "--system" in text
+        # Numeric USER so Kubernetes runAsNonRoot can verify it without /etc/passwd.
+        assert "USER 1000:1000" in text
+        assert "useradd" in text and "--uid 1000" in text
         assert 'user.name  "groundtruth"' in text or 'user.name "groundtruth"' in text
         assert "user.email" in text and "groundtruth@localhost" in text
         assert "HEALTHCHECK" in text and "/health" in text

@@ -44,8 +44,11 @@ class TestDeploymentTemplate:
         values = yaml.safe_load((_CHART / "values.yaml").read_text())
         sc = values["securityContext"]
         assert sc["runAsNonRoot"] is True
+        assert sc["runAsUser"] == 1000  # numeric — k8s verifies non-root without /etc/passwd
+        assert sc["runAsGroup"] == 1000
         assert sc["allowPrivilegeEscalation"] is False
         assert sc["capabilities"]["drop"] == ["ALL"]
+        assert values["podSecurityContext"]["fsGroup"] == 1000  # volumes writable by uid 1000
 
     def test_recreate_strategy_for_single_writer_volume(self) -> None:
         assert "type: Recreate" in self._text()
