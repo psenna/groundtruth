@@ -10,11 +10,24 @@ query it over MCP; you (and agents) feed it by ingesting docs.
   (set server-side — groundtruth does not send `num_ctx`).
 
 > **Cut `v0.0.2` first.** `service.nodePort` and `config.llm_timeout_s` (and the
-> Dockerfile fix that makes the image build at all) all landed after `v0.0.1`.
-> Tag `v0.0.2` on `main` and let `release.yml` publish
-> `ghcr.io/psenna/groundtruth:0.0.2` + `ghcr.io/psenna/charts/groundtruth:0.0.2`.
-> Until then, install the chart from a checkout of `main`
-> (`helm ... ./charts/groundtruth`) and set `image.tag` to a tag that exists.
+> Dockerfile fix that makes the image build at all) landed after `v0.0.1`, and
+> the `v0.0.1` release run failed at the image step — so **nothing is published
+> yet**. Tag `v0.0.2` on `main` (`git tag v0.0.2 <main-sha> && git push origin
+> v0.0.2`); `release.yml` then publishes both packages to GHCR:
+>
+> | Package | Reference |
+> |---|---|
+> | image | `ghcr.io/psenna/groundtruth:0.0.2` (also `:0.0`, `:latest`) |
+> | chart | `oci://ghcr.io/psenna/charts/groundtruth` version `0.0.2` |
+>
+> **Make both packages public** (one-time): GitHub → your profile → *Packages* →
+> `groundtruth` and `charts/groundtruth` → *Package settings* → *Change
+> visibility → Public*, and *Connect repository*. Then neither `helm` nor the
+> k3s nodes need registry credentials. (Keeping them private is covered in §2.)
+>
+> Before the tag exists you can still install from a checkout of `main`:
+> `helm upgrade --install gt ./charts/groundtruth -f values-knowledge.yaml` with
+> `image.tag` set to a tag that does exist.
 
 ---
 
@@ -28,6 +41,10 @@ replicaCount: 1                       # single-writer by design; never raise
 image:
   repository: ghcr.io/psenna/groundtruth
   tag: "0.0.2"                        # must be a published tag; bump on each release
+
+# Only if the image package is PRIVATE (see §2). Public → delete this block.
+# imagePullSecrets:
+#   - name: ghcr
 
 service:
   type: NodePort
@@ -115,17 +132,40 @@ No `secret:` block — Ollama needs no key, and `auth: none` needs no token.
 
 ## 2. Deploy
 
-```sh
-# from a checkout of groundtruth main (v0.0.2+ chart)
-git clone https://github.com/psenna/groundtruth && cd groundtruth
+Helm 3.8+ speaks OCI natively — the chart is an OCI artifact at
+`oci://ghcr.io/psenna/charts/groundtruth`.
 
-helm upgrade --install gt ./charts/groundtruth \
+```sh
+helm upgrade --install gt oci://ghcr.io/psenna/charts/groundtruth \
+  --version 0.0.2 \
   -n groundtruth --create-namespace \
-  -f /path/to/values-knowledge.yaml
+  -f values-knowledge.yaml
 
 kubectl -n groundtruth rollout status deploy/gt-groundtruth
 kubectl -n groundtruth get svc gt-groundtruth        # confirm nodePort 30800
 ```
+
+`--version` is required for an OCI install — there is no `index.yaml` to resolve
+a floating version. Inspect before installing with
+`helm show values oci://ghcr.io/psenna/charts/groundtruth --version 0.0.2`.
+
+### If the packages are private
+
+Two separate credentials — the chart is pulled by **your `helm` client**, the
+image by **the k3s nodes**.
+
+```sh
+# helm client → chart
+echo "$GITHUB_PAT" | helm registry login ghcr.io -u <github-user> --password-stdin
+
+# k3s nodes → image
+kubectl -n groundtruth create secret docker-registry ghcr \
+  --docker-server=ghcr.io --docker-username=<github-user> --docker-password="$GITHUB_PAT"
+# then uncomment imagePullSecrets in values-knowledge.yaml
+```
+
+`$GITHUB_PAT` needs `read:packages`. Making both packages public (see the note at
+the top) removes both of these steps.
 
 Set a base URL for the rest of this doc (any node IP):
 
@@ -308,11 +348,12 @@ kubectl -n groundtruth exec deploy/gt-groundtruth -- \
 Better: `kubectl exec … git -C /data/knowledge bundle create - --all > knowledge.bundle`
 periodically, or set a real git remote and `auto_push: true`.
 
-**Upgrade**
+**Upgrade** — bump `--version` to the new chart release (and set `image.tag` to
+match, or pin it in the values):
 
 ```sh
-helm upgrade gt ./charts/groundtruth -n groundtruth -f values-knowledge.yaml \
-  --set image.tag=<new>
+helm upgrade gt oci://ghcr.io/psenna/charts/groundtruth --version <new> \
+  -n groundtruth -f values-knowledge.yaml
 ```
 
 Strategy is `Recreate` (single-writer volume) — expect a few seconds of downtime.
