@@ -28,5 +28,6 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
         "grep_max_bytes": 65536,
         "read_max_bytes": 32768,
         "vocab_max_bytes": 4096,
+        "organize_max_attempts": 2,
     },
 }

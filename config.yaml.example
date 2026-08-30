@@ -37,3 +37,4 @@ defaults:
     grep_max_bytes: 65536
     read_max_bytes: 32768
     vocab_max_bytes: 4096
+    organize_max_attempts: 2   # re-prompt organize with the validator's rejection this many times before failing; 1 disables
