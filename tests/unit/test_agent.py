@@ -72,6 +72,18 @@ def test_loop_returns_final_message_when_model_stops() -> None:
     assert len(client.calls) == 2
 
 
+def test_string_prompt_is_a_user_message_not_system() -> None:
+    # Some chat templates (Qwen, some Llama/Mistral) 500 on a messages array
+    # with no user turn — the loop's opening message must be role "user".
+    budget = Budget(BudgetLimits(max_tool_calls=10))
+    tools = FakeTools(budget, {})
+    client = ScriptedClient([_say("ok")])
+
+    run_agent(client, "answer", "survey this text", tools, budget)
+
+    assert client.calls[0][0] == {"role": "user", "content": "survey this text"}
+
+
 def test_transcript_records_calls_and_results_in_order() -> None:
     budget = Budget(BudgetLimits(max_tool_calls=10))
     tools = FakeTools(budget, {"ls": lambda: "listing", "read": lambda path: f"body of {path}"})
