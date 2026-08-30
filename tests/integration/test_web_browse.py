@@ -63,8 +63,8 @@ class TestBrowse:
 
     def test_note_renders_with_readable_frontmatter(self, client: TestClient) -> None:
         html = client.get("/browse/work/companies/Acme.md").text
-        assert "<h2>Acme</h2>" in html
-        assert "<th>tags</th><td>company</td>" in html
+        assert ">Acme</h2>" in html
+        assert '<span class="badge">company</span>' in html
         assert "Acme rivals" in html
 
     def test_wikilink_is_clickable_within_browse(self, client: TestClient) -> None:

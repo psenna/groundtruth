@@ -60,7 +60,8 @@ class TestComposedApp:
             # POST /query, POST /ingest, GET /jobs/{id} (same app, same paths):
             # a form body posted to a JSON route 422s.
             job = client.post("/ui/ingest", data={"vault": "work", "text": "hello"})
-            assert job.status_code == 200 and "Job <code>" in job.text  # form -> HTML
+            assert job.status_code == 200 and "data-job-id=" in job.text  # form -> HTML
+            assert client.get("/queue").status_code == 200  # queue page
             form_query = client.post("/ui/query", data={"vault": "work", "question": "hi?"})
             assert form_query.status_code != 422  # reached the form handler (LLM may be down)
             # the JSON API still owns the bare paths

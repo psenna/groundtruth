@@ -6,19 +6,167 @@
   <title>{% block title %}groundtruth{% endblock %}</title>
   <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }
-    nav a { margin-right: 1rem; }
-    textarea { width: 100%; min-height: 8rem; }
-    .refusal { border-left: 4px solid #b8860b; background: #fff8e1; padding: .75rem 1rem; }
-    .refusal h3 { margin-top: 0; color: #7a5c00; }
-    .error { border-left: 4px solid #c62828; background: #ffebee; padding: .75rem 1rem; }
-    .answer { border-left: 4px solid #2e7d32; padding: .75rem 1rem; }
-    .job-failed { color: #c62828; }
-    .citations a { display: inline-block; margin-right: .5rem; }
+    :root {
+      --bg: #fbfbfa; --surface: #ffffff; --surface-2: #f5f5f4;
+      --border: #e7e5e4; --border-strong: #d6d3d1;
+      --text: #1c1917; --text-muted: #78716c; --text-faint: #a8a29e;
+      --accent: #4f46e5; --accent-fg: #ffffff; --accent-soft: #eef2ff;
+      --ok: #15803d; --ok-soft: #dcfce7;
+      --warn: #b45309; --warn-soft: #fef3c7;
+      --err: #b91c1c; --err-soft: #fee2e2;
+      --info: #1d4ed8; --info-soft: #dbeafe;
+      --radius: 10px; --radius-sm: 7px;
+      --shadow: 0 1px 2px rgba(28,25,23,.04), 0 1px 3px rgba(28,25,23,.06);
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0c0a09; --surface: #1c1917; --surface-2: #262322;
+        --border: #292524; --border-strong: #3f3b39;
+        --text: #fafaf9; --text-muted: #a8a29e; --text-faint: #78716c;
+        --accent: #818cf8; --accent-fg: #0c0a09; --accent-soft: #1e1b3a;
+        --ok: #4ade80; --ok-soft: #14311f;
+        --warn: #fbbf24; --warn-soft: #3a2c0a;
+        --err: #f87171; --err-soft: #3a1616;
+        --info: #60a5fa; --info-soft: #16263f;
+        --shadow: 0 1px 2px rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.35);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1 { font-size: 1.5rem; font-weight: 640; letter-spacing: -.01em; margin: 0 0 .25rem; }
+    h2 { font-size: 1.15rem; font-weight: 620; margin: 1.5rem 0 .5rem; }
+    code, kbd { font-family: var(--mono); font-size: .86em; }
+
+    header.app {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; gap: 1.5rem;
+      padding: 0 1.5rem; height: 56px;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      backdrop-filter: saturate(180%) blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    header.app .brand {
+      display: flex; align-items: center; gap: .55rem;
+      font-weight: 650; letter-spacing: -.02em; color: var(--text);
+    }
+    header.app .brand .dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft);
+    }
+    header.app nav { display: flex; gap: .25rem; }
+    header.app nav a {
+      padding: .4rem .7rem; border-radius: var(--radius-sm);
+      color: var(--text-muted); font-weight: 500;
+    }
+    header.app nav a:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
+    header.app nav a.active { color: var(--text); background: var(--accent-soft); }
+
+    main { max-width: 60rem; margin: 2rem auto 4rem; padding: 0 1.5rem; }
+    .subtle { color: var(--text-muted); font-size: .9rem; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: 1.25rem 1.35rem;
+    }
+    .card + .card { margin-top: 1rem; }
+
+    label { display: block; font-weight: 560; font-size: .85rem; color: var(--text-muted);
+            margin-bottom: .35rem; }
+    select, input[type=text], input[type=number], textarea {
+      width: 100%; font: inherit; color: var(--text);
+      background: var(--surface); border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm); padding: .55rem .7rem;
+    }
+    select { height: 2.4rem; }
+    textarea { min-height: 9rem; resize: vertical; line-height: 1.5; }
+    select:focus, input:focus, textarea:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .field { margin-bottom: 1rem; }
+
+    button, .btn {
+      font: inherit; font-weight: 560; cursor: pointer;
+      background: var(--accent); color: var(--accent-fg);
+      border: 1px solid transparent; border-radius: var(--radius-sm);
+      padding: .55rem 1rem;
+    }
+    button:hover, .btn:hover { filter: brightness(1.06); }
+    button.secondary {
+      background: var(--surface); color: var(--text); border-color: var(--border-strong);
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    thead th {
+      text-align: left; font-weight: 580; font-size: .74rem;
+      text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint);
+      padding: .5rem .7rem; border-bottom: 1px solid var(--border);
+    }
+    tbody td { padding: .6rem .7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--surface-2); }
+    .num { font-variant-numeric: tabular-nums; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: .35rem;
+      padding: .16rem .5rem; border-radius: 999px;
+      font-size: .74rem; font-weight: 600; letter-spacing: .01em;
+      background: var(--surface-2); color: var(--text-muted);
+    }
+    .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .badge.queued { background: var(--surface-2); color: var(--text-muted); }
+    .badge.running { background: var(--info-soft); color: var(--info); }
+    .badge.running::before { animation: pulse 1.4s ease-in-out infinite; }
+    .badge.succeeded { background: var(--ok-soft); color: var(--ok); }
+    .badge.failed { background: var(--err-soft); color: var(--err); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+    .callout { border-left: 3px solid var(--border-strong); padding: .8rem 1rem; border-radius: var(--radius-sm);
+               background: var(--surface-2); }
+    .callout.refusal { border-color: var(--warn); background: var(--warn-soft); }
+    .callout.refusal h3 { margin: 0 0 .3rem; font-size: .95rem; color: var(--warn); }
+    .callout.error { border-color: var(--err); background: var(--err-soft); color: var(--err); }
+    .callout.answer { border-color: var(--ok); background: var(--surface); }
+
+    .stat-row { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+    .stat { display: flex; align-items: baseline; gap: .4rem;
+            padding: .4rem .75rem; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 999px; font-size: .82rem; color: var(--text-muted); }
+    .stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .empty { text-align: center; color: var(--text-muted); padding: 2.5rem 1rem; }
+    .mono-id { font-family: var(--mono); font-size: .8rem; color: var(--text-muted); }
+    .note-body { line-height: 1.7; }
+    .note-body pre { background: var(--surface-2); padding: .8rem; border-radius: var(--radius-sm);
+                     overflow-x: auto; }
+
+    @media (max-width: 640px) {
+      header.app { gap: .75rem; padding: 0 1rem; }
+      main { padding: 0 1rem; margin-top: 1.25rem; }
+      .hide-sm { display: none; }
+    }
   </style>
 </head>
 <body>
-  <nav><a href="/">Query</a><a href="/ingest">Ingest</a><a href="/browse">Browse</a></nav>
-  {% block content %}{% endblock %}
+  <header class="app">
+    <span class="brand"><span class="dot"></span>groundtruth</span>
+    <nav>
+      <a href="/"        class="{{ 'active' if nav == 'query' else '' }}">Query</a>
+      <a href="/ingest"  class="{{ 'active' if nav == 'ingest' else '' }}">Ingest</a>
+      <a href="/queue"   class="{{ 'active' if nav == 'queue' else '' }}">Queue</a>
+      <a href="/browse"  class="{{ 'active' if nav == 'browse' else '' }}">Browse</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
 </body>
 </html>

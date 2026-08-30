@@ -2,14 +2,21 @@
 {% block title %}Ingest · groundtruth{% endblock %}
 {% block content %}
 <h1>Ingest</h1>
-<form hx-post="/ui/ingest" hx-target="#job" hx-swap="innerHTML">
-  <label>Vault
-    <select name="vault">
+<p class="subtle">Paste text — groundtruth distils it into tagged, linked notes in one commit. Track progress on the <a href="/queue">Queue</a>.</p>
+
+<form class="card" hx-post="/ui/ingest" hx-target="#job" hx-swap="innerHTML" style="margin-top:1rem;">
+  <div class="field">
+    <label for="i-vault">Vault</label>
+    <select id="i-vault" name="vault">
       {% for v in vaults %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
     </select>
-  </label>
-  <p><textarea name="text" placeholder="Paste text to ingest"></textarea></p>
+  </div>
+  <div class="field">
+    <label for="i-text">Text</label>
+    <textarea id="i-text" name="text" placeholder="Paste a document, notes, a transcript…"></textarea>
+  </div>
   <button type="submit">Ingest</button>
 </form>
-<div id="job"></div>
+
+<div id="job" style="margin-top:1rem;"></div>
 {% endblock %}

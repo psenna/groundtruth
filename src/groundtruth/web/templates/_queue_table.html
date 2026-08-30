@@ -1,0 +1,55 @@
+<div class="stat-row">
+  <span class="stat"><b>{{ counts.running }}</b> running</span>
+  <span class="stat"><b>{{ counts.queued }}</b> queued</span>
+  <span class="stat"><b>{{ counts.succeeded }}</b> succeeded</span>
+  <span class="stat"><b>{{ counts.failed }}</b> failed</span>
+</div>
+
+<div class="card" style="padding:0; overflow-x:auto;">
+{% if not rows %}
+  <p class="empty">No ingest jobs yet. Start one from <a href="/ingest">Ingest</a>.</p>
+{% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>State</th>
+        <th>Vault</th>
+        <th class="hide-sm">Notes</th>
+        <th class="hide-sm num">Duration</th>
+        <th class="num">Started</th>
+        <th>Job</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in rows %}
+      <tr>
+        <td>
+          <span class="badge {{ j.state }}">{{ j.state }}</span>
+          {% if j.attempts > 1 %}<span class="subtle"> · try {{ j.attempts }}</span>{% endif %}
+        </td>
+        <td>{{ j.vault }}</td>
+        <td class="hide-sm num">
+          {% if j.state == "succeeded" %}
+            {% if j.deduplicated %}<span class="subtle">deduplicated</span>
+            {% else %}+{{ j.created_n }} new / {{ j.updated_n }} updated{% endif %}
+          {% elif j.state == "failed" %}<span class="subtle">—</span>
+          {% else %}<span class="subtle">…</span>{% endif %}
+        </td>
+        <td class="hide-sm num">{{ j.duration }}</td>
+        <td class="num subtle">{{ j.created }}</td>
+        <td><span class="mono-id">{{ j.id[:12] }}</span></td>
+      </tr>
+      {% if j.state == "failed" and j.error %}
+      <tr>
+        <td></td>
+        <td colspan="5" class="subtle" style="padding-top:0;">
+          <span style="color:var(--err);">✗ {{ j.failure_stage }}</span> — {{ j.error }}
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+</div>
+<p class="subtle" style="margin-top:.75rem;">Showing {{ total }} most recent · refreshes every 3s</p>

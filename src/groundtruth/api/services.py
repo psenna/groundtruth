@@ -91,6 +91,9 @@ class Services:
             problem(404, f"no job {job_id!r}")
         return record
 
+    def list_recent_jobs(self, limit: int = 100) -> list[JobRecord]:
+        return self.job_store.list_recent(limit)
+
     # --- read surface ----------------------------------------------------
 
     def _vault_and_config(self, vault_name: str) -> tuple[Vault, VaultConfig]:

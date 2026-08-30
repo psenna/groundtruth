@@ -4,6 +4,7 @@ entirely to the queue (#27) via :class:`Services`.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter
@@ -34,6 +35,8 @@ class JobResponse(BaseModel):
     notes_created: list[str] = []
     notes_updated: list[str] = []
     attempts: int = 1
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     @classmethod
     def of(cls, record: JobRecord) -> JobResponse:
@@ -48,6 +51,8 @@ class JobResponse(BaseModel):
             notes_created=record.notes_created,
             notes_updated=record.notes_updated,
             attempts=record.attempts,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
         )
 
 
@@ -66,6 +71,10 @@ def build_ingest_router(services: Services) -> APIRouter:
         if isinstance(result, str):
             return {"id": result, "state": JobState.QUEUED.value}
         return JobResponse.of(result).model_dump()
+
+    @router.get("/jobs")
+    def list_jobs(limit: int = 100) -> list[dict[str, Any]]:
+        return [JobResponse.of(r).model_dump() for r in services.list_recent_jobs(limit)]
 
     @router.get("/jobs/{job_id}")
     def get_job(job_id: str) -> dict[str, Any]:

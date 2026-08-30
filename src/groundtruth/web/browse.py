@@ -39,7 +39,7 @@ def build_browse_router(services: Services) -> APIRouter:
         return _TEMPLATES.TemplateResponse(
             request,
             "browse.html",
-            {"vaults": [v.name for v in services.list_vaults()], "vault": None},
+            {"vaults": [v.name for v in services.list_vaults()], "vault": None, "nav": "browse"},
         )
 
     @router.get("/browse/{vault}", response_class=HTMLResponse)
@@ -51,6 +51,7 @@ def build_browse_router(services: Services) -> APIRouter:
             {
                 "vaults": [v.name for v in services.list_vaults()],
                 "vault": vault,
+                "nav": "browse",
                 "tree": _tree(paths),
                 "note": None,
             },
@@ -66,6 +67,7 @@ def build_browse_router(services: Services) -> APIRouter:
             {
                 "vaults": [v.name for v in services.list_vaults()],
                 "vault": vault,
+                "nav": "browse",
                 "tree": _tree(all_paths),
                 "note": {
                     "path": note.path,

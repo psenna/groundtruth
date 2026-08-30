@@ -1,15 +1,22 @@
 {% set terminal = job.state in ("succeeded", "failed") %}
-<div id="job-status"
+<div id="job-status" class="card"
      data-job-id="{{ job.id }}"
      data-state="{{ job.state }}"
      {% if not terminal %}hx-get="/ui/jobs/{{ job.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML"{% endif %}>
-  <p>Job <code>{{ job.id }}</code> — <strong>{{ job.state }}</strong>
-     {% if job.deduplicated %}<em>(deduplicated — matched a prior ingest)</em>{% endif %}</p>
+  <div style="display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;">
+    <span class="badge {{ job.state }}">{{ job.state }}</span>
+    <span class="mono-id">{{ job.id[:12] }}</span>
+    {% if job.deduplicated %}<span class="subtle">deduplicated — matched a prior ingest</span>{% endif %}
+  </div>
   {% if job.state == "failed" %}
-  <p class="job-failed">Failed at stage <strong>{{ job.failure_stage }}</strong>:
-     {{ job.error }}</p>
+  <p style="color:var(--err); margin:.7rem 0 0;">
+    Failed at <strong>{{ job.failure_stage }}</strong> — {{ job.error }}</p>
   {% elif job.state == "succeeded" and job.commit_sha %}
-  <p>Committed <code>{{ job.commit_sha[:12] }}</code>;
-     created {{ job.notes_created|length }}, updated {{ job.notes_updated|length }} note(s).</p>
+  <p class="subtle" style="margin:.7rem 0 0;">
+    Committed <code>{{ job.commit_sha[:12] }}</code> ·
+    {{ job.notes_created|length }} new, {{ job.notes_updated|length }} updated note(s) ·
+    <a href="/queue">queue</a></p>
+  {% else %}
+  <p class="subtle" style="margin:.7rem 0 0;">Working… this can take a few minutes on a local model.</p>
   {% endif %}
 </div>

@@ -68,21 +68,46 @@ class TestIngestView:
     def test_submit_shows_a_job_id_and_polls(self, client) -> None:  # type: ignore[no-untyped-def]
         c = client([])
         html = c.post("/ui/ingest", data={"vault": "work", "text": "hello"}).text
-        assert "Job <code>" in html
+        assert "data-job-id=" in html
+        assert 'class="badge queued"' in html
         assert 'hx-get="/ui/jobs/' in html  # progress polling
 
     def test_failed_job_shows_stage_and_reason(self, client, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
         c = client([])
         (tmp_path / "repo" / "work" / "dirty.md").write_text("x\n")  # dirty tree -> job fails
         job_html = c.post("/ui/ingest", data={"vault": "work", "text": "hello"}).text
-        job_id = job_html.split("Job <code>")[1].split("</code>")[0]
-        for _ in range(50):  # poll like htmx would, until terminal
+        job_id = job_html.split('data-job-id="')[1].split('"')[0]
+        for _ in range(100):  # poll like htmx would, until terminal
             status = c.get(f"/ui/jobs/{job_id}").text
-            if "running" not in status:
+            if 'data-state="succeeded"' in status or 'data-state="failed"' in status:
                 break
             time.sleep(0.05)
-        assert "failed" in status
+        assert 'data-state="failed"' in status
         assert "clean-tree" in status
+
+
+class TestQueueView:
+    def test_lists_a_submitted_job_with_a_state_badge(self, client, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+        c = client([])
+        (tmp_path / "repo" / "work" / "dirty.md").write_text("x\n")  # force the job to fail
+        c.post("/ui/ingest", data={"vault": "work", "text": "hello"})
+        for _ in range(50):
+            page = c.get("/queue").text
+            if "badge failed" in page:
+                break
+            time.sleep(0.05)
+        assert "Ingest queue" in page
+        assert "badge failed" in page
+        assert "1</b> failed" in page  # count strip
+        assert 'hx-get="/ui/queue"' in page  # auto-refresh wired
+
+    def test_fragment_renders_standalone(self, client) -> None:  # type: ignore[no-untyped-def]
+        frag = client([]).get("/ui/queue").text
+        assert "most recent" in frag
+        assert "<html" not in frag  # a fragment, not a full page
+
+    def test_empty_queue_has_a_friendly_message(self, client) -> None:  # type: ignore[no-untyped-def]
+        assert "No ingest jobs yet" in client([]).get("/queue").text
 
 
 class TestQueryView:
@@ -95,9 +120,9 @@ class TestQueryView:
     def test_refusal_renders_as_a_refusal_not_an_error(self, client) -> None:  # type: ignore[no-untyped-def]
         c = client([LLMResponse(role="answer", model="m", text="the vault does not contain this")])
         html = c.post("/ui/query", data={"vault": "work", "question": "revenue?"}).text
-        assert 'class="refusal"' in html
+        assert "callout refusal" in html
         assert 'data-outcome="refused"' in html
-        assert 'class="error"' not in html
+        assert "callout error" not in html
         assert "not an error" in html  # explanatory text
 
     def test_both_refusal_reasons_have_their_own_text(self, client) -> None:  # type: ignore[no-untyped-def]

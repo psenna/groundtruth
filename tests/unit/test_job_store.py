@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -40,6 +40,37 @@ class TestPersistence:
     def test_stored_under_state_dir_jobs(self, tmp_path: Path) -> None:
         JobStore(tmp_path).create(_job())
         assert (tmp_path / "jobs" / "01J8X.json").is_file()
+
+
+class TestTimestampsAndListing:
+    def test_create_stamps_created_and_updated(self, tmp_path: Path) -> None:
+        t = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+        store = JobStore(tmp_path, now=lambda: t)
+        store.create(_job())
+        rec = store.load("01J8X")
+        assert rec is not None and rec.created_at == t and rec.updated_at == t
+
+    def test_update_advances_only_updated_at(self, tmp_path: Path) -> None:
+        clock = iter([datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC)])
+        store = JobStore(tmp_path, now=lambda: next(clock))
+        store.create(_job())
+        store.update(_job(state=JobState.RUNNING))
+        rec = store.load("01J8X")
+        assert rec is not None
+        assert rec.created_at == datetime(2026, 1, 1, tzinfo=UTC)
+        assert rec.updated_at == datetime(2026, 1, 2, tzinfo=UTC)
+
+    def test_list_recent_is_newest_activity_first_and_limited(self, tmp_path: Path) -> None:
+        times = iter(datetime(2026, 1, d, tzinfo=UTC) for d in (1, 2, 3, 4, 5, 6))
+        store = JobStore(tmp_path, now=lambda: next(times))
+        for i in (1, 2, 3):
+            store.create(_job(f"job{i}"))
+        store.update(JobRecord(id="job1", vault="work", state=JobState.RUNNING))  # newest touch
+        recent = store.list_recent(limit=2)
+        assert [r.id for r in recent] == ["job1", "job3"]
+
+    def test_list_recent_empty_when_no_jobs(self, tmp_path: Path) -> None:
+        assert JobStore(tmp_path).list_recent() == []
 
 
 class TestTransitions:
