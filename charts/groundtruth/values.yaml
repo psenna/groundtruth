@@ -167,3 +167,8 @@ config:
       grep_max_bytes: 65536
       read_max_bytes: 32768
       vocab_max_bytes: 4096
+      # -- Times the organize step is re-run, with the write validator's
+      # rejection fed back to the model, before the job fails. 1 disables the
+      # retry. Raise it for a local model that often trips the link/collision
+      # checks.
+      organize_max_attempts: 2
