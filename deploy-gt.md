@@ -9,16 +9,17 @@ query it over MCP; you (and agents) feed it by ingesting docs.
 - **One model**: your Ollama `gemma4:31b` at `192.168.5.150:11434`, 100k context
   (set server-side — groundtruth does not send `num_ctx`).
 
-> **Cut `v0.0.2` first.** `service.nodePort` and `config.llm_timeout_s` (and the
-> Dockerfile fix that makes the image build at all) landed after `v0.0.1`, and
-> the `v0.0.1` release run failed at the image step — so **nothing is published
-> yet**. Tag `v0.0.2` on `main` (`git tag v0.0.2 <main-sha> && git push origin
-> v0.0.2`); `release.yml` then publishes both packages to GHCR:
+> **Cut `v0.0.3` first.** `service.nodePort`, `config.llm_timeout_s`, the
+> Dockerfile fix that makes the image build, and the numeric-uid fix that makes
+> it run under `runAsNonRoot` on k3s all landed after `v0.0.1` — and the `v0.0.1`
+> release run failed at the image step, so **nothing is published yet**. Tag
+> `v0.0.3` on `main` (`git tag v0.0.3 <main-sha> && git push origin v0.0.3`);
+> `release.yml` then publishes both packages to GHCR:
 >
 > | Package | Reference |
 > |---|---|
-> | image | `ghcr.io/psenna/groundtruth:0.0.2` (also `:0.0`, `:latest`) |
-> | chart | `oci://ghcr.io/psenna/charts/groundtruth` version `0.0.2` |
+> | image | `ghcr.io/psenna/groundtruth:0.0.3` (also `:0.0`, `:latest`) |
+> | chart | `oci://ghcr.io/psenna/charts/groundtruth` version `0.0.3` |
 >
 > **Make both packages public** (one-time): GitHub → your profile → *Packages* →
 > `groundtruth` and `charts/groundtruth` → *Package settings* → *Change
@@ -40,7 +41,7 @@ replicaCount: 1                       # single-writer by design; never raise
 
 image:
   repository: ghcr.io/psenna/groundtruth
-  tag: "0.0.2"                        # must be a published tag; bump on each release
+  tag: "0.0.3"                        # must be a published tag; bump on each release
 
 # Only if the image package is PRIVATE (see §2). Public → delete this block.
 # imagePullSecrets:
@@ -137,7 +138,7 @@ Helm 3.8+ speaks OCI natively — the chart is an OCI artifact at
 
 ```sh
 helm upgrade --install gt oci://ghcr.io/psenna/charts/groundtruth \
-  --version 0.0.2 \
+  --version 0.0.3 \
   -n groundtruth --create-namespace \
   -f values-knowledge.yaml
 
@@ -147,7 +148,7 @@ kubectl -n groundtruth get svc gt-groundtruth        # confirm nodePort 30800
 
 `--version` is required for an OCI install — there is no `index.yaml` to resolve
 a floating version. Inspect before installing with
-`helm show values oci://ghcr.io/psenna/charts/groundtruth --version 0.0.2`.
+`helm show values oci://ghcr.io/psenna/charts/groundtruth --version 0.0.3`.
 
 ### If the packages are private
 
@@ -384,6 +385,10 @@ curl -s $GT/health          # never needs auth
   `false` after the initial curation if you'd rather keep the schema hand-managed.
 - **No git remote.** The vault lives only on the PVC (`retainOnDelete: true`, so
   `helm uninstall` keeps it). Take backups.
+- **`CreateContainerConfigError` … cannot verify user is non-root** — you're on
+  an image older than `v0.0.3` (its `USER` was a name, not `1000`). Either use a
+  `v0.0.3+` image, or `helm upgrade … --set securityContext.runAsUser=1000
+  --set securityContext.runAsGroup=1000`.
 
 ### Locking it down (optional)
 
