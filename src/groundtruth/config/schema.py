@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ConfigError(ValueError):
@@ -75,3 +75,8 @@ class GlobalConfig(BaseModel):
     #: Registry seed: ``name -> repo root``.
     vaults: dict[str, str] = {}
     llm_logging: bool = False
+    #: HTTP read/connect timeout (seconds) for every LLM call. The default suits a
+    #: hosted API; raise it for a large local model where prompt processing of a
+    #: big context can exceed a minute (a timed-out call is retried, so a job that
+    #: hits this consistently fails after ~3x this value).
+    llm_timeout_s: float = Field(default=60.0, gt=0)

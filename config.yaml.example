@@ -11,6 +11,7 @@ server:
 state_dir: /var/lib/groundtruth   # a named volume, outside every vault repo
 job_retention_days: 7
 llm_logging: false                # prompts contain ingested content (§12.4)
+llm_timeout_s: 60                 # HTTP timeout per LLM call; raise for a big local model
 
 vaults:                            # registry seed: name -> repo root under /data
   work: /data/work

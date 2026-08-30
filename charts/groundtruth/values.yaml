@@ -44,6 +44,10 @@ securityContext:
 service:
   type: ClusterIP
   port: 8000
+  # -- Fixed node port (30000–32767). Only used when type is NodePort; leave
+  # empty to let Kubernetes assign one. One port exposes the API, the web UI
+  # and the MCP endpoint.
+  nodePort: ""
 
 ingress:
   enabled: false
@@ -132,6 +136,11 @@ config:
   state_dir: /var/lib/groundtruth
   job_retention_days: 7
   llm_logging: false
+  # -- HTTP timeout (seconds) for every LLM call. Raise it well above the 60s
+  # default for a large local model — prompt processing of a big context can
+  # take minutes, and a timed-out call is retried (~3x this value before a job
+  # fails).
+  llm_timeout_s: 60
   vaults:
     work: /data/work
   defaults:
