@@ -37,10 +37,10 @@ from .archive import set_commit_sha, write_archive
 from .commit_message import format_commit_message
 from .dedup import check_dedup, content_hash, mark_deduped
 from .prompts import ORGANIZE, REDUCE, TAG, parse_reduced_items, parse_tags, render_prompt
-from .schema import load_schema
-from .validator import validate
+from .schema import Schema, load_schema
+from .validator import ValidationRejectionError, validate
 from .vocabulary import derive_vocabulary
-from .write_tools import PendingWrites, WriteTools
+from .write_tools import PendingNote, PendingWrites, WriteTools
 
 _SURVEY_INSTRUCTION = (
     "You are surveying an Obsidian vault to find the notes that the text below "
@@ -125,45 +125,19 @@ class IngestPipeline:
             tags = self._stage(
                 acc, "llm", lambda: self._tag(client, acc, schema.raw, vocab.render(), reduced)
             )
-            pending: PendingWrites = self._stage(
-                acc,
-                "llm",
-                lambda: self._organize(
-                    client,
-                    acc,
-                    config,
-                    vault,
-                    schema.raw,
-                    vocab.render(),
-                    relevant,
-                    reduced,
-                    existing,
-                ),
-            )
-
-            staged = [
-                note.with_frontmatter(
-                    NoteFrontmatter(
-                        title=note.title or note.path.rsplit("/", 1)[-1].removesuffix(".md"),
-                        tags=tags,
-                        sources=[sha],
-                        created=today,
-                        updated=today,
-                    )
-                )
-                for note in pending
-            ]
-            pending.notes[:] = staged
-            self._stage(
-                acc,
-                "write-validation",
-                lambda: validate(
-                    pending,
-                    schema,
-                    config.limits,
-                    vault_root=str(vault.vault_dir),
-                    existing_paths=existing,
-                ),
+            pending: PendingWrites = self._organize_and_validate(
+                acc=acc,
+                client=client,
+                config=config,
+                vault=vault,
+                schema=schema,
+                vocab=vocab.render(),
+                relevant=relevant,
+                reduced=reduced,
+                existing=existing,
+                tags=tags,
+                sha=sha,
+                today=today,
             )
 
             created = [n.path for n in pending if n.is_new]
@@ -326,41 +300,102 @@ class IngestPipeline:
         response = self._complete(client, TAG, prompt, acc)
         return parse_tags(response.text or "")
 
-    def _organize(
+    def _organize_and_validate(
         self,
-        client: Any,
+        *,
         acc: _Accum,
+        client: Any,
         config: VaultConfig,
         vault: Vault,
-        schema_md: str,
+        schema: Schema,
         vocab: str,
         relevant: str,
         reduced: list[str],
         existing: set[str],
-    ) -> Any:
-        budget = Budget(BudgetLimits.from_limits(config.limits))
-        tools = WriteTools(vault.vault_dir, existing_paths=existing)
-        all_paths = (
-            "\n".join(f"- {p}" for p in sorted(existing)[:1000])
-            if existing
-            else "(the vault has no notes yet)"
-        )
-        prompt = render_prompt(
+        tags: list[str],
+        sha: str,
+        today: date,
+    ) -> PendingWrites:
+        """Run organize, stamp frontmatter, validate — retrying on a validator
+        rejection with the rejection fed back to the model (spec §7.5).
+
+        The retry is *not* sanitize-and-continue (ADR-5): the model redoes its
+        own output, every attempt goes through the same validator, and once the
+        attempts are spent an invalid batch still fails the job loudly.
+        """
+        base_prompt = render_prompt(
             ORGANIZE,
-            schema_md=schema_md,
+            schema_md=schema.raw,
             derived_vocabulary=vocab,
             existing_notes=relevant,
-            existing_note_paths=all_paths,
+            existing_note_paths=_note_path_listing(existing),
             input_items="\n".join(f"- {item}" for item in reduced),
         )
-        outcome = run_agent(client, ORGANIZE, prompt, tools, budget)
+        attempts = max(1, config.limits.organize_max_attempts)
+        conversation: str | list[dict[str, Any]] = base_prompt
+
+        for attempt in range(1, attempts + 1):
+            drafted: tuple[PendingWrites, list[dict[str, Any]]] = self._stage(
+                acc,
+                "llm",
+                lambda convo=conversation: self._run_organize_agent(
+                    client, config, vault, existing, convo
+                ),
+            )
+            pending, messages = drafted
+            pending.notes[:] = [_stamp(note, tags, sha, today) for note in pending]
+            try:
+                self._stage(
+                    acc,
+                    "write-validation",
+                    lambda staged=pending: validate(
+                        staged,
+                        schema,
+                        config.limits,
+                        vault_root=str(vault.vault_dir),
+                        existing_paths=existing,
+                    ),
+                )
+            except ValidationRejectionError as rejection:
+                if attempt == attempts:
+                    raise
+                log_stage(
+                    acc.job_id,
+                    acc.vault,
+                    "write-validation",
+                    "retry",
+                    attempt=attempt,
+                    remaining=attempts - attempt,
+                    rule=rejection.rule,
+                    note=rejection.note_path,
+                )
+                conversation = [
+                    *messages,
+                    {"role": "user", "content": _retry_feedback(rejection)},
+                ]
+                continue
+            return pending
+
+        raise AssertionError("unreachable: the loop returns or re-raises")
+
+    def _run_organize_agent(
+        self,
+        client: Any,
+        config: VaultConfig,
+        vault: Vault,
+        existing: set[str],
+        conversation: str | list[dict[str, Any]],
+    ) -> tuple[PendingWrites, list[dict[str, Any]]]:
+        budget = Budget(BudgetLimits.from_limits(config.limits))
+        tools = WriteTools(vault.vault_dir, existing_paths=existing)
+        outcome = run_agent(client, ORGANIZE, conversation, tools, budget)
         if outcome.status is AgentStatus.EXHAUSTED:
             raise _StageFailureError("llm", "organize budget exhausted", rollback=True)
         if outcome.status is AgentStatus.FAILED:
             raise _StageFailureError("llm", outcome.error or "organize failed", rollback=True)
         if len(tools.pending) == 0:
             raise _StageFailureError("llm", "organize produced no writes", rollback=True)
-        return tools.pending
+        return tools.pending, outcome.messages
 
     def _complete(self, client: Any, role: str, prompt: str, acc: _Accum) -> LLMResponse:
         try:
@@ -375,6 +410,63 @@ class IngestPipeline:
 
 def _stem(path: str) -> str:
     return path.rsplit("/", 1)[-1].removesuffix(".md")
+
+
+def _note_path_listing(existing: set[str]) -> str:
+    if not existing:
+        return "(the vault has no notes yet)"
+    return "\n".join(f"- {p}" for p in sorted(existing)[:1000])
+
+
+def _stamp(note: PendingNote, tags: list[str], sha: str, today: date) -> PendingNote:
+    return note.with_frontmatter(
+        NoteFrontmatter(
+            title=note.title or _stem(note.path),
+            tags=tags,
+            sources=[sha],
+            created=today,
+            updated=today,
+        )
+    )
+
+
+#: Rule-specific nudge appended to the generic retry feedback.
+_RETRY_HINTS: dict[str, str] = {
+    "link_integrity": (
+        "A [[wikilink]] may point only at a note listed under 'Every note path in "
+        "the vault' or one you create in this same batch. Write every other "
+        "reference as plain text, not a link."
+    ),
+    "collision": (
+        "That path already exists — call update_note(path, body) for it instead of create_note."
+    ),
+    "missing_target": (
+        "That path does not exist yet — call create_note(folder, title, body) "
+        "instead of update_note."
+    ),
+    "folder": (
+        "Create notes only in a folder declared in the schema above. Use the "
+        "closest declared folder."
+    ),
+    "note_count": (
+        "Too many notes touched. Consolidate to one note per topic or entity "
+        "(never one per claim) and update existing notes instead of adding "
+        "near-duplicates."
+    ),
+    "duplicate_path": "You staged the same path twice — merge those into one call.",
+    "filename": ("Keep the title plain: no slashes, no leading dots, no path segments."),
+}
+
+
+def _retry_feedback(rejection: ValidationRejectionError) -> str:
+    hint = _RETRY_HINTS.get(rejection.rule, "")
+    return (
+        f"STOP — the validator rejected the notes and nothing was saved:\n\n"
+        f"    {rejection}\n\n"
+        f"{hint}\n\n"
+        "Redo the ENTIRE batch of create_note / update_note calls from scratch — "
+        "the previous calls were all discarded. Do not repeat the rejected output."
+    ).strip()
 
 
 def _subject(created: Sequence[str], updated: Sequence[str]) -> str:

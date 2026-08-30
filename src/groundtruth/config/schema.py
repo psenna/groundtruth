@@ -37,6 +37,12 @@ class Limits(BaseModel):
     grep_max_bytes: int
     read_max_bytes: int
     vocab_max_bytes: int
+    #: How many times the organize stage may run, re-prompted with the validator's
+    #: rejection, before the job fails (spec §7.5 — "one pass or several"). ``1``
+    #: disables the retry. Nothing is ever silently repaired: the final attempt
+    #: still passes through the validator and the job fails loudly if it is
+    #: invalid (ADR-5).
+    organize_max_attempts: int = Field(default=2, ge=1)
 
 
 class VaultConfig(BaseModel):

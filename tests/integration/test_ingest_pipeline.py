@@ -28,7 +28,11 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _config(
-    *, auto_push: bool = False, raw_archive: bool = True, max_tool_calls: int = 30
+    *,
+    auto_push: bool = False,
+    raw_archive: bool = True,
+    max_tool_calls: int = 30,
+    organize_max_attempts: int = 2,
 ) -> VaultConfig:
     return VaultConfig(
         raw_archive=raw_archive,
@@ -44,6 +48,7 @@ def _config(
             grep_max_bytes=65536,
             read_max_bytes=32768,
             vocab_max_bytes=4096,
+            organize_max_attempts=organize_max_attempts,
         ),
     )
 
@@ -192,7 +197,7 @@ class TestFailurePaths:
         head_before = _git(vault.repo_root, "rev-parse", "HEAD")
         responses = _happy_responses()
         responses[3] = _tool("create_note", {"folder": "undeclared", "title": "X", "body": "hi"})
-        job = _run(pipeline, vault, ScriptedClient(responses), _config())
+        job = _run(pipeline, vault, ScriptedClient(responses), _config(organize_max_attempts=1))
 
         assert job.state is JobState.FAILED
         assert job.failure_stage == "write-validation"
@@ -289,3 +294,84 @@ class TestHappyPath:
         assert job.state is JobState.SUCCEEDED  # §7.10 — ingest succeeded, sync did not
         assert job.error and "push" in job.error.lower()
         assert job.commit_sha == _git(vault.repo_root, "rev-parse", "HEAD")
+
+
+class RecordingClient(ScriptedClient):
+    """A ScriptedClient that keeps every ``messages`` array it was handed."""
+
+    def __init__(self, responses: list[LLMResponse | Exception]) -> None:
+        super().__init__(responses)
+        self.seen: list[list[dict[str, object]]] = []
+
+    def complete(self, role: str, messages: object, **kw: object) -> LLMResponse:
+        self.seen.append([dict(m) for m in messages])  # type: ignore[arg-type]
+        return super().complete(role, messages, **kw)
+
+
+def _organize_turn(body: str) -> list[LLMResponse]:
+    """One organize attempt: a single create_note call, then the model stops."""
+    return [
+        _tool("create_note", {"folder": "companies", "title": "Acme Corp", "body": body}),
+        _text("done"),
+    ]
+
+
+class TestOrganizeRetry:
+    def test_dangling_link_is_retried_with_feedback_then_succeeds(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = [
+            _text("none"),  # survey
+            _text("- Acme Corp was founded in 1996."),  # reduce
+            _text("company"),  # tag
+            *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 1 — dangling
+            *_organize_turn("Founded 1996."),  # attempt 2 — clean
+        ]
+        client = RecordingClient(responses)
+        job = _run(pipeline, vault, client, _config())
+
+        assert job.state is JobState.SUCCEEDED
+        assert job.notes_created == ["companies/Acme Corp.md"]
+
+        fed_back = " ".join(str(m.get("content") or "") for msgs in client.seen for m in msgs)
+        assert "link_integrity" in fed_back  # the rule
+        assert "people/Nobody" in fed_back  # the offending target
+
+    def test_retry_exhausted_fails_loudly_and_rolls_back(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        head_before = _git(vault.repo_root, "rev-parse", "HEAD")
+        responses = [
+            _text("none"),
+            _text("- Acme Corp was founded in 1996."),
+            _text("company"),
+            *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 1
+            *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 2 — same
+        ]
+        job = _run(pipeline, vault, ScriptedClient(responses), _config())
+
+        assert job.state is JobState.FAILED
+        assert job.failure_stage == "write-validation"
+        assert "link_integrity" in (job.error or "")
+        assert _git(vault.repo_root, "rev-parse", "HEAD") == head_before
+        assert GitRepo(vault.repo_root).is_clean()
+        assert not (vault.vault_dir / "companies").exists()
+
+    def test_max_attempts_one_disables_the_retry(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = [
+            _text("none"),
+            _text("- Acme Corp was founded in 1996."),
+            _text("company"),
+            *_organize_turn("Founded 1996. See [[people/Nobody]]."),
+        ]
+        client = ScriptedClient(responses)
+        job = _run(pipeline, vault, client, _config(organize_max_attempts=1))
+
+        assert job.state is JobState.FAILED
+        assert job.failure_stage == "write-validation"
+        assert client.calls == 5  # survey, reduce, tag, one organize turn (tool + done) — no retry
