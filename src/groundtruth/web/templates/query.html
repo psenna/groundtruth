@@ -2,7 +2,7 @@
 {% block title %}Query · groundtruth{% endblock %}
 {% block content %}
 <h1>Query</h1>
-<form hx-post="/query" hx-target="#result" hx-swap="innerHTML">
+<form hx-post="/ui/query" hx-target="#result" hx-swap="innerHTML">
   <label>Vault
     <select name="vault">
       {% for v in vaults %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
