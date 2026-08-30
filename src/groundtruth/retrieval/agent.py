@@ -61,8 +61,12 @@ class AgentOutcome:
 
 
 def _initial_messages(system: str | Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    # A bare string is the whole instruction+content for the loop. Send it as a
+    # `user` turn, not `system`: several chat templates (Qwen, some Llama/Mistral
+    # builds) reject a messages array with no user message ("no user query found
+    # in messages" -> HTTP 500), and the content is a task prompt anyway.
     if isinstance(system, str):
-        return [{"role": "system", "content": system}]
+        return [{"role": "user", "content": system}]
     return [dict(message) for message in system]
 
 
