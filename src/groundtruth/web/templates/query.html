@@ -2,14 +2,24 @@
 {% block title %}Query · groundtruth{% endblock %}
 {% block content %}
 <h1>Query</h1>
-<form hx-post="/ui/query" hx-target="#result" hx-swap="innerHTML">
-  <label>Vault
-    <select name="vault">
+<p class="subtle">Answers come only from what a vault contains, with citations — or an explicit refusal.</p>
+
+<form class="card" hx-post="/ui/query" hx-target="#result" hx-swap="innerHTML"
+      hx-indicator="#q-spin" style="margin-top:1rem;">
+  <div class="field">
+    <label for="q-vault">Vault</label>
+    <select id="q-vault" name="vault">
       {% for v in vaults %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
     </select>
-  </label>
-  <p><textarea name="question" placeholder="Ask a question about this vault"></textarea></p>
+  </div>
+  <div class="field">
+    <label for="q-text">Question</label>
+    <textarea id="q-text" name="question" placeholder="Ask a question about this vault…"></textarea>
+  </div>
   <button type="submit">Ask</button>
+  <span id="q-spin" class="htmx-indicator subtle" style="margin-left:.75rem;">thinking…</span>
 </form>
-<div id="result"></div>
+
+<div id="result" style="margin-top:1rem;"></div>
+<style>.htmx-indicator{opacity:0;transition:opacity .2s} .htmx-request .htmx-indicator{opacity:1}</style>
 {% endblock %}

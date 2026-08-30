@@ -164,6 +164,15 @@ class TestJobs:
         client, _, _ = env
         assert client.get("/jobs/nope").status_code == 404
 
+    def test_list_jobs_returns_recent_first(self, env: tuple[TestClient, Services, Path]) -> None:
+        client, _, _ = env
+        client.post("/ingest?wait=true", json={"vault": "work", "text": TEXT})
+        client.post("/ingest?wait=true", json={"vault": "work", "text": TEXT + " more"})
+        jobs = client.get("/jobs").json()
+        assert len(jobs) == 2
+        assert jobs[0]["updated_at"] >= jobs[1]["updated_at"]
+        assert client.get("/jobs?limit=1").json() == [jobs[0]]
+
     def test_job_records_cannot_hold_a_secret(self, env: tuple[TestClient, Services, Path]) -> None:
         # The job store refuses a secret-shaped record outright (invariant 6);
         # the response layer also redacts defensively.

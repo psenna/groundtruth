@@ -1,16 +1,18 @@
 {% if outcome == "refused" %}
-<div class="refusal" role="status" data-outcome="refused" data-reason="{{ reason }}">
+<div class="card callout refusal" role="status" data-outcome="refused" data-reason="{{ reason }}">
   <h3>No grounded answer</h3>
   <p>{{ message }}</p>
-  <p><small>This is a deliberate refusal, not an error: groundtruth only answers from
-  what the vault contains.</small></p>
+  <p class="subtle" style="margin-bottom:0;">A deliberate refusal, not an error — groundtruth only
+  answers from what the vault contains.</p>
 </div>
 {% else %}
-<div class="answer" data-outcome="answer">
-  {{ rendered_answer|safe }}
+<div class="card callout answer" data-outcome="answer">
+  <div class="note-body">{{ rendered_answer|safe }}</div>
   {% if citations %}
-  <p class="citations">Sources:
-    {% for c in citations %}<a href="/browse/{{ c.vault }}/{{ c.path }}">[[{{ c.path }}]]</a>{% endfor %}
+  <p class="subtle" style="margin:.9rem 0 0;">Sources —
+    {% for c in citations %}
+      <a href="/browse/{{ c.vault }}/{{ c.path }}"><code>{{ c.path }}</code></a>{% if not loop.last %} · {% endif %}
+    {% endfor %}
   </p>
   {% endif %}
 </div>

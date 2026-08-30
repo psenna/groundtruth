@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Queue · groundtruth{% endblock %}
+{% block content %}
+<div style="display:flex; align-items:baseline; justify-content:space-between; gap:1rem;">
+  <div>
+    <h1>Ingest queue</h1>
+    <p class="subtle">One job per ingest. Jobs run one at a time, per vault, in order.</p>
+  </div>
+  <a class="btn secondary" href="/ingest">New ingest</a>
+</div>
+
+<div id="queue"
+     hx-get="/ui/queue"
+     hx-trigger="load, every 3s"
+     hx-swap="innerHTML">
+  {% include "_queue_table.html" %}
+</div>
+{% endblock %}

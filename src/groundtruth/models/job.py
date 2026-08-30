@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,6 +34,11 @@ class JobRecord(BaseModel):
     id: str
     vault: str
     state: JobState = JobState.QUEUED
+
+    #: Set by the JobStore on create / on every state write. Optional so records
+    #: written before this field existed still load.
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     #: Per-stage wall-clock seconds (spec §12.4).
     stage_timings: dict[str, float] = Field(default_factory=dict)
