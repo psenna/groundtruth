@@ -37,6 +37,7 @@ class TestTemplates:
                 input_text="x",
                 input_items="x",
                 existing_notes="none",
+                existing_note_paths="- projects/acme.md",
             )
             assert SCHEMA_MD in rendered  # verbatim, prescriptive
             assert VOCAB in rendered  # descriptive, derived (§5.3)
@@ -55,6 +56,9 @@ class TestTemplates:
         assert "newer value wins" in text
         assert "create_note" in text and "update_note" in text
         assert "only" in text
+        # the full valid-link-target list is offered, and dangling links are called out
+        assert "{{existing_note_paths}}" in text
+        assert "dangling link" in text
 
 
 class TestTagParsing:

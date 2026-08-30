@@ -12,6 +12,14 @@ You integrate distilled information into an Obsidian vault by creating and updat
 
 {{EXISTING_NOTES}}
 
+## Every note path in the vault
+
+A `[[wikilink]]` may point **only** at a path in this list or at a note you
+create in this same batch — nothing else. Do not link to a note you merely
+think should exist or intend to write later.
+
+{{EXISTING_NOTE_PATHS}}
+
 ## Your task
 
 For the distilled items below, decide **per item** whether to create a new note, update
@@ -23,8 +31,10 @@ covering a company, its products, and its contract terms becomes a small number 
 sentence and not one note per fact. When an item belongs in a note that already exists,
 update that note rather than creating a near-duplicate.
 
-Link related notes to each other with `[[wikilinks]]` in the body. Every `[[link]]` must
-point at a note that exists or one you create in this same batch.
+Link related notes to each other with `[[wikilinks]]` in the body, respecting the
+link rule under "Every note path in the vault" above — a dangling link fails the
+whole ingest. If the note you would link to does not exist and you are not
+creating it now, write the reference as plain text instead.
 
 **Conflicts — the newer value wins.** When an item contradicts something already stored,
 write the new value in place of the old one. Do not create a note about the disagreement

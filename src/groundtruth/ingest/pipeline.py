@@ -340,11 +340,17 @@ class IngestPipeline:
     ) -> Any:
         budget = Budget(BudgetLimits.from_limits(config.limits))
         tools = WriteTools(vault.vault_dir, existing_paths=existing)
+        all_paths = (
+            "\n".join(f"- {p}" for p in sorted(existing)[:1000])
+            if existing
+            else "(the vault has no notes yet)"
+        )
         prompt = render_prompt(
             ORGANIZE,
             schema_md=schema_md,
             derived_vocabulary=vocab,
             existing_notes=relevant,
+            existing_note_paths=all_paths,
             input_items="\n".join(f"- {item}" for item in reduced),
         )
         outcome = run_agent(client, ORGANIZE, prompt, tools, budget)
