@@ -9,17 +9,17 @@ query it over MCP; you (and agents) feed it by ingesting docs.
 - **One model**: your Ollama `gemma4:31b` at `192.168.5.150:11434`, 100k context
   (set server-side — groundtruth does not send `num_ctx`).
 
-> **Cut `v0.0.3` first.** `service.nodePort`, `config.llm_timeout_s`, the
+> **Cut `v0.0.4` first.** `service.nodePort`, `config.llm_timeout_s`, the
 > Dockerfile fix that makes the image build, and the numeric-uid fix that makes
 > it run under `runAsNonRoot` on k3s all landed after `v0.0.1` — and the `v0.0.1`
 > release run failed at the image step, so **nothing is published yet**. Tag
-> `v0.0.3` on `main` (`git tag v0.0.3 <main-sha> && git push origin v0.0.3`);
+> `v0.0.4` on `main` (`git tag v0.0.4 <main-sha> && git push origin v0.0.4`);
 > `release.yml` then publishes both packages to GHCR:
 >
 > | Package | Reference |
 > |---|---|
-> | image | `ghcr.io/psenna/groundtruth:0.0.3` (also `:0.0`, `:latest`) |
-> | chart | `oci://ghcr.io/psenna/charts/groundtruth` version `0.0.3` |
+> | image | `ghcr.io/psenna/groundtruth:0.0.4` (also `:0.0`, `:latest`) |
+> | chart | `oci://ghcr.io/psenna/charts/groundtruth` version `0.0.4` |
 >
 > **Make both packages public** (one-time): GitHub → your profile → *Packages* →
 > `groundtruth` and `charts/groundtruth` → *Package settings* → *Change
@@ -41,7 +41,7 @@ replicaCount: 1                       # single-writer by design; never raise
 
 image:
   repository: ghcr.io/psenna/groundtruth
-  tag: "0.0.3"                        # must be a published tag; bump on each release
+  tag: "0.0.4"                        # must be a published tag; bump on each release
 
 # Only if the image package is PRIVATE (see §2). Public → delete this block.
 # imagePullSecrets:
@@ -138,7 +138,7 @@ Helm 3.8+ speaks OCI natively — the chart is an OCI artifact at
 
 ```sh
 helm upgrade --install gt oci://ghcr.io/psenna/charts/groundtruth \
-  --version 0.0.3 \
+  --version 0.0.4 \
   -n groundtruth --create-namespace \
   -f values-knowledge.yaml
 
@@ -148,7 +148,7 @@ kubectl -n groundtruth get svc gt-groundtruth        # confirm nodePort 30800
 
 `--version` is required for an OCI install — there is no `index.yaml` to resolve
 a floating version. Inspect before installing with
-`helm show values oci://ghcr.io/psenna/charts/groundtruth --version 0.0.3`.
+`helm show values oci://ghcr.io/psenna/charts/groundtruth --version 0.0.4`.
 
 ### If the packages are private
 
@@ -370,6 +370,28 @@ curl -s $GT/health          # never needs auth
 
 ## Caveats — read before you rely on it
 
+- **Model compatibility.** Ingest and query run a tool-calling agent loop.
+  - The model tag must match `ollama list` **exactly** (`gemma4:26b` ≠
+    `gemma4:26b-a4b-it-q4_K_M`), `base_url` must end in `/v1`, and **all four
+    roles** (`default`/`tag`/`reduce`/`answer`) must be set — the survey step
+    uses `reduce`, and an unset role silently falls back to a `qwen2.5:*`
+    built-in you probably don't have. Wrong tag → `LLM returned HTTP 404`.
+  - Needs an image ≥ `v0.0.4` to work with **Qwen** (and some Llama/Mistral
+    builds): older images send the agent loop a system-only messages array,
+    which those templates reject with `HTTP 500` ("no user query found"). Gemma
+    tolerates it.
+  - Small/MoE models (e.g. `gemma4:26b-a4b`, ~4B active) are loose with the
+    strict validator — expect `collision` (create vs update), dangling
+    `[[wikilink]]` and `note_count` failures. A dense model (`gemma4:31b-it`,
+    `qwen3.8:27b`) or a small hosted model (Claude Haiku, gpt-4o-mini — any
+    OpenAI endpoint) follows the rules far better. Feed single-topic inputs, not
+    whole READMEs.
+- **VRAM.** A 27–31B model at Q4 (~17–20 GB) plus a 100k-context KV cache is a
+  lot. If a model 500s on load, drop its `num_ctx` (32k is plenty — tool outputs
+  are capped at 64 KB), `ollama stop` other models, or offload to CPU.
+- **The web UI query/ingest forms need an image ≥ `v0.0.4`** (route-collision fix).
+  On an older image, query via `POST /query` (JSON `{vault,question}`) or the MCP
+  `groundtruth_query` tool; `/browse` works regardless.
 - **Latency.** gemma4:31b at 100k context is slow. `reduce` and `answer` calls
   can take minutes; an ingest of a large doc runs the retrieval agent loop
   several times. `llm_timeout_s: 600` and `max_wall_clock_s: 900` are sized for
@@ -386,8 +408,8 @@ curl -s $GT/health          # never needs auth
 - **No git remote.** The vault lives only on the PVC (`retainOnDelete: true`, so
   `helm uninstall` keeps it). Take backups.
 - **`CreateContainerConfigError` … cannot verify user is non-root** — you're on
-  an image older than `v0.0.3` (its `USER` was a name, not `1000`). Either use a
-  `v0.0.3+` image, or `helm upgrade … --set securityContext.runAsUser=1000
+  an image older than `v0.0.4` (its `USER` was a name, not `1000`). Either use a
+  `v0.0.4+` image, or `helm upgrade … --set securityContext.runAsUser=1000
   --set securityContext.runAsGroup=1000`.
 
 ### Locking it down (optional)
