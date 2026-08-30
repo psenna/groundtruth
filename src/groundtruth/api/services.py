@@ -51,6 +51,8 @@ class Services:
     client_override: Any = None  # a stand-in LLM client for tests
     #: LLM prompt/response logging to <state-dir>/llm/<job-id>.jsonl. Off by default (§12.4).
     llm_logging: bool = False
+    #: HTTP timeout (seconds) for every LLM call — see GlobalConfig.llm_timeout_s.
+    llm_timeout_s: float = 60.0
 
     _pending: dict[str, _PendingIngest] = field(default_factory=dict, init=False)
     queue: JobQueue = field(init=False)
@@ -105,7 +107,9 @@ class Services:
 
     def query(self, vault_name: str, question: str) -> AnswerResult | Refusal:
         vault, config = self._vault_and_config(vault_name)
-        client = self.client_override or LLMClient(config.models, environ=self.environ)
+        client = self.client_override or LLMClient(
+            config.models, environ=self.environ, timeout=self.llm_timeout_s
+        )
         outcome = recover(vault, question, client, limits=config.limits)
 
         if outcome.status is AgentStatus.EXHAUSTED:
@@ -165,7 +169,9 @@ class Services:
             environ=self.environ,
             repo_root=pending.vault.repo_root,
         )
-        client = self.client_override or LLMClient(config.models, environ=self.environ)
+        client = self.client_override or LLMClient(
+            config.models, environ=self.environ, timeout=self.llm_timeout_s
+        )
         if self.llm_logging:
             client = LoggingLLMClient(client, LLMCallLog(self.state_dir, enabled=True), job_id)
         try:

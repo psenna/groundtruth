@@ -56,6 +56,7 @@ def build_app(
         cli_config=Path(config_path) if config_path else None,
         environ=env,
         llm_logging=config.llm_logging,
+        llm_timeout_s=config.llm_timeout_s,
     )
 
     auth = build_strategy(

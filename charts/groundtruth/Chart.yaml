@@ -7,7 +7,7 @@ type: application
 # version    — the chart's own SemVer, bumped on every chart change.
 # appVersion — the groundtruth release the default image tag points at.
 # The release workflow overwrites both from the pushed git tag.
-version: 0.0.1
+version: 0.0.2
 appVersion: "0.0.1"
 home: https://github.com/psenna/groundtruth
 sources:

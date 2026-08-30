@@ -4,10 +4,12 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from groundtruth.config import (
     BUILTIN_DEFAULTS,
     ConfigError,
+    load_global_config,
     load_vault_config,
     resolve_global_config_path,
 )
@@ -140,3 +142,24 @@ class TestMissingFiles:
         )
         assert cfg.auto_push is BUILTIN_DEFAULTS["auto_push"]
         assert cfg.limits.max_tool_calls == BUILTIN_DEFAULTS["limits"]["max_tool_calls"]
+
+
+class TestLLMTimeout:
+    def test_defaults_to_60s(self, tmp_path: Path) -> None:
+        cfg_path = _write(tmp_path / "config.yaml", {"state_dir": str(tmp_path / "state")})
+        assert load_global_config(cli_config=cfg_path, environ={}).llm_timeout_s == 60.0
+
+    def test_reads_the_configured_value(self, tmp_path: Path) -> None:
+        cfg_path = _write(
+            tmp_path / "config.yaml",
+            {"state_dir": str(tmp_path / "state"), "llm_timeout_s": 600},
+        )
+        assert load_global_config(cli_config=cfg_path, environ={}).llm_timeout_s == 600.0
+
+    def test_rejects_non_positive(self, tmp_path: Path) -> None:
+        cfg_path = _write(
+            tmp_path / "config.yaml",
+            {"state_dir": str(tmp_path / "state"), "llm_timeout_s": 0},
+        )
+        with pytest.raises(ValidationError):
+            load_global_config(cli_config=cfg_path, environ={})
