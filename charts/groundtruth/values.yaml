@@ -159,9 +159,15 @@ config:
         # roles below, which inherit it). Ollama: `none` turns off thinking for
         # Qwen3-class models. OpenAI: minimal|low|medium|high. Omit to send nothing.
         # reasoning_effort: none
+        # -- Extra sampling params merged into every call (inherited + deep-merged
+        # by the roles below). Ingest is extraction + tool-calling, so keep
+        # temperature low; a high presence_penalty drops precise repeated terms.
+        # params:
+        #   temperature: 0.2
+        #   presence_penalty: 0
       tag: {model: qwen2.5:7b}
       reduce: {model: qwen2.5:14b}
-      answer: {model: qwen2.5:32b}
+      answer: {model: qwen2.5:32b}   # e.g. answer: {model: ..., params: {temperature: 0.4}}
     limits:
       max_notes_per_ingest: 10
       max_note_bytes: 65536

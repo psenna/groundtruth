@@ -94,12 +94,24 @@ def _load_yaml_mapping(path: Path) -> dict[str, Any]:
 
 
 def _resolve_model_roles(models: Mapping[str, Any]) -> dict[str, Any]:
-    """Fill each role's missing keys from ``models.default`` (spec §11.2)."""
+    """Fill each role's missing keys from ``models.default`` (spec §11.2).
+
+    ``params`` is deep-merged (a role adds to / overrides default's individual
+    sampling params); every other key is a plain override.
+    """
     default = dict(models.get("default", {}))
+    default_params = dict(default.get("params") or {})
     resolved: dict[str, Any] = {}
     for role, spec in models.items():
         spec_dict = dict(spec) if isinstance(spec, Mapping) else {}
-        resolved[role] = spec_dict if role == "default" else {**default, **spec_dict}
+        if role == "default":
+            resolved[role] = spec_dict
+            continue
+        merged = {**default, **spec_dict}
+        role_params = {**default_params, **(spec_dict.get("params") or {})}
+        if role_params:
+            merged["params"] = role_params
+        resolved[role] = merged
     return resolved
 
 
