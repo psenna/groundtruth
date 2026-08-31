@@ -26,8 +26,19 @@ from ..storage.paths import UnsafePathError, resolve_in_vault, sanitize_title
 # model's *content*, not its packaging).
 
 _TITLE_EXT = re.compile(r"\.(?:md|markdown|txt)$", re.IGNORECASE)
+_FM_KEYS = "tags|title|sources|created|updated|aliases"
 _LEADING_FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---[ \t]*\r?\n?", re.DOTALL)
-_FRONTMATTER_KEY = re.compile(r"(?im)^[ \t]*(?:tags|title|sources|created|updated|aliases)[ \t]*:")
+_FRONTMATTER_KEY = re.compile(rf"(?im)^[ \t]*(?:{_FM_KEYS})[ \t]*:")
+#: A leading run of frontmatter-shaped lines the model wrote *without* the ``---``
+#: fences: one or more ``key:`` / ``- item`` / blank lines, starting with a known
+#: frontmatter key, then a blank line before the real body.
+_FM_LINE = rf"[ \t]*(?:{_FM_KEYS})[ \t]*:.*\r?\n"  # a "key: ..." line
+_UNFENCED_FRONTMATTER = re.compile(
+    rf"\A{_FM_LINE}"  # first line is a known frontmatter key
+    rf"(?:{_FM_LINE}|[ \t]*-[ \t].*\r?\n|[ \t]*\r?\n)*"  # then more keys / list items / blanks
+    rf"\r?\n",  # a blank line closes the block
+    re.IGNORECASE,
+)
 
 
 def _normalize_title(title: Any) -> Any:
@@ -39,15 +50,20 @@ def _normalize_title(title: Any) -> Any:
 
 
 def _strip_body_frontmatter(body: Any) -> Any:
-    """Remove a single leading ``---`` … ``---`` block the model prepended to the
-    body. The system owns frontmatter (tags/sources/timestamps); only strip when
-    the fenced block actually looks like frontmatter, never a stray rule.
+    """Remove a leading frontmatter block the model prepended to the body — both
+    the ``---`` … ``---`` fenced form and the bare ``tags:`` / ``sources:`` … run
+    it writes with no fences. The system owns frontmatter (tags/sources/
+    timestamps); only strip a block that actually starts with a frontmatter key,
+    never a stray ``---`` rule or ordinary prose.
     """
     if not isinstance(body, str):
         return body
-    match = _LEADING_FRONTMATTER.match(body)
-    if match and _FRONTMATTER_KEY.search(match.group(1)):
-        return body[match.end() :].lstrip("\n")
+    fenced = _LEADING_FRONTMATTER.match(body)
+    if fenced and _FRONTMATTER_KEY.search(fenced.group(1)):
+        return body[fenced.end() :].lstrip("\n")
+    unfenced = _UNFENCED_FRONTMATTER.match(body)
+    if unfenced:
+        return body[unfenced.end() :].lstrip("\n")
     return body
 
 

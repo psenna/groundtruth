@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from groundtruth.ingest.pipeline import _note_path_listing, _retry_feedback
+from groundtruth.ingest.schema import Schema
 from groundtruth.ingest.validator import ValidationRejectionError
 
 
@@ -32,6 +33,19 @@ class TestRetryFeedback:
         msg = _retry_feedback(ValidationRejectionError("some_new_rule", "a/b.md", "nope"))
         assert "some_new_rule" in msg
         assert "Redo" in msg
+
+    def test_folder_rejection_lists_the_declared_folders(self) -> None:
+        schema = Schema(folders=["projects", "projects/x", "architecture"], tag_guidance="", raw="")
+        msg = _retry_feedback(
+            ValidationRejectionError("folder", "projects/x/ci/n.md", "folder 'projects/x/ci' ..."),
+            schema,
+        )
+        assert "architecture, projects, projects/x" in msg  # sorted, verbatim
+        assert "sub-folder" in msg
+
+    def test_folder_rejection_without_schema_still_works(self) -> None:
+        msg = _retry_feedback(ValidationRejectionError("folder", "x/y.md", "nope"))
+        assert "closest declared folder" in msg
 
 
 class TestNotePathListing:
