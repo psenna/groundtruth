@@ -31,6 +31,8 @@ defaults:
     tag:    {model: qwen2.5:7b}
     reduce: {model: qwen2.5:14b}
     answer: {model: qwen2.5:32b}
+    # answer: {model: qwen2.5:32b, reasoning_effort: high}  # per-role override:
+    #   turn thinking off everywhere (default above) but keep it on for answers
   limits:
     max_notes_per_ingest: 10
     max_note_bytes: 65536

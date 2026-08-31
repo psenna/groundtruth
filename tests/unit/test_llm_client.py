@@ -245,3 +245,23 @@ class TestReasoningEffort:
         )
         assert resolved["tag"]["reasoning_effort"] == "low"
         assert ModelConfig(**resolved["tag"]).reasoning_effort == "low"
+
+    def test_role_value_overrides_the_default(self) -> None:
+        from groundtruth.config.loader import _resolve_model_roles
+
+        resolved = _resolve_model_roles(
+            {
+                "default": {
+                    "base_url": "u",
+                    "model": "d",
+                    "api_key_env": "K",
+                    "reasoning_effort": "none",
+                },
+                "answer": {"model": "a", "reasoning_effort": "high"},
+                "tag": {"model": "t"},
+            }
+        )
+        assert resolved["answer"]["reasoning_effort"] == "high"  # role wins
+        assert resolved["tag"]["reasoning_effort"] == "none"  # unset role inherits
+        assert ModelConfig(**resolved["answer"]).reasoning_effort == "high"
+        assert ModelConfig(**resolved["tag"]).reasoning_effort == "none"
