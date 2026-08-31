@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +24,13 @@ class ModelConfig(BaseModel):
     #: ``medium``/``high``; Ollama maps ``none`` to "thinking off" for models
     #: like Qwen3. Leave unset to send nothing (the backend's own default).
     reasoning_effort: str | None = None
+    #: Extra sampling/decoding parameters merged verbatim into every
+    #: chat-completions request for this role — e.g.
+    #: ``{temperature: 0.2, presence_penalty: 0, top_p: 0.8}``. groundtruth's
+    #: stages are extraction and tool-calling, so a low ``temperature`` is
+    #: usually right. ``model``/``messages``/``tools``/``stream`` cannot be
+    #: overridden here. A role's ``params`` are deep-merged over ``default``'s.
+    params: dict[str, Any] = Field(default_factory=dict)
 
     def resolve_api_key(self, environ: Mapping[str, str]) -> str | None:
         """Look up the API key in ``environ`` at use time (spec §11.4)."""

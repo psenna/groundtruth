@@ -30,6 +30,9 @@ from ..errors import (
 
 _STAGE = "llm"
 
+#: Payload keys ``ModelConfig.params`` may not set — the client owns these.
+_RESERVED_PAYLOAD_KEYS = frozenset({"model", "messages", "tools", "stream"})
+
 
 @dataclass(frozen=True)
 class TokenUsage:
@@ -95,6 +98,9 @@ class LLMClient:
     ) -> LLMResponse:
         model = self.model_for(role)
         payload: dict[str, Any] = {"model": model.model, "messages": list(messages)}
+        for key, value in model.params.items():
+            if key not in _RESERVED_PAYLOAD_KEYS:
+                payload[key] = value
         if model.reasoning_effort is not None:
             payload["reasoning_effort"] = model.reasoning_effort
         if tools:

@@ -27,12 +27,17 @@ defaults:
       api_key_env: GT_API_KEY
       # reasoning_effort: none   # sent as `reasoning_effort`; Ollama: `none` disables
       #                          # thinking for Qwen3-class models. OpenAI: minimal|low|medium|high.
-      #                          # inherited by the roles below unless they set their own.
+      # params:                  # extra sampling params, merged into every call for the role.
+      #   temperature: 0.2       # ingest is extraction + tool-calling — keep it low.
+      #   presence_penalty: 0    # a high presence_penalty drops precise repeated terms.
+      # (reasoning_effort + params are inherited by the roles below; params deep-merge.)
     tag:    {model: qwen2.5:7b}
     reduce: {model: qwen2.5:14b}
     answer: {model: qwen2.5:32b}
-    # answer: {model: qwen2.5:32b, reasoning_effort: high}  # per-role override:
-    #   turn thinking off everywhere (default above) but keep it on for answers
+    # answer:                                # per-role overrides:
+    #   model: qwen2.5:32b
+    #   reasoning_effort: high               # thinking off elsewhere, on for answers
+    #   params: {temperature: 0.4}           # merged over default's params
   limits:
     max_notes_per_ingest: 10
     max_note_bytes: 65536

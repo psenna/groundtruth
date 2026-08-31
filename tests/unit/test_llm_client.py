@@ -265,3 +265,70 @@ class TestReasoningEffort:
         assert resolved["tag"]["reasoning_effort"] == "none"  # unset role inherits
         assert ModelConfig(**resolved["answer"]).reasoning_effort == "high"
         assert ModelConfig(**resolved["tag"]).reasoning_effort == "none"
+
+
+class TestSamplingParams:
+    @staticmethod
+    def _payload_for(models: dict[str, ModelConfig], role: str) -> dict:
+        seen: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.update(json.loads(request.content))
+            return httpx.Response(200, json=_ok_body())
+
+        LLMClient(
+            models,
+            environ={KEY_ENV: KEY_VALUE},
+            transport=httpx.MockTransport(handler),
+        ).complete(role, [{"role": "user", "content": "x"}])
+        return seen
+
+    def test_absent_when_empty(self) -> None:
+        assert "temperature" not in self._payload_for(_models(), "tag")
+
+    def test_params_are_merged_into_the_payload(self) -> None:
+        base = {"base_url": "https://llm.local/v1", "api_key_env": KEY_ENV}
+        models = {
+            "default": ModelConfig(
+                model="d", params={"temperature": 0.2, "presence_penalty": 0}, **base
+            ),
+        }
+        payload = self._payload_for(models, "default")
+        assert payload["temperature"] == 0.2
+        assert payload["presence_penalty"] == 0
+
+    def test_reserved_keys_cannot_be_overridden(self) -> None:
+        base = {"base_url": "https://llm.local/v1", "api_key_env": KEY_ENV}
+        models = {
+            "default": ModelConfig(
+                model="real-model",
+                params={"model": "evil", "messages": [], "tools": [], "temperature": 0.1},
+                **base,
+            ),
+        }
+        payload = self._payload_for(models, "default")
+        assert payload["model"] == "real-model"
+        assert payload["messages"] == [{"role": "user", "content": "x"}]
+        assert "tools" not in payload
+        assert payload["temperature"] == 0.1  # the non-reserved one still lands
+
+    def test_role_params_deep_merge_over_default(self) -> None:
+        from groundtruth.config.loader import _resolve_model_roles
+
+        resolved = _resolve_model_roles(
+            {
+                "default": {
+                    "base_url": "u",
+                    "model": "d",
+                    "api_key_env": "K",
+                    "params": {"temperature": 0.2, "presence_penalty": 0},
+                },
+                "answer": {"model": "a", "params": {"temperature": 0.4}},
+                "tag": {"model": "t"},
+            }
+        )
+        # answer: its temperature wins, default's presence_penalty carried over
+        assert resolved["answer"]["params"] == {"temperature": 0.4, "presence_penalty": 0}
+        # tag: inherits default's params wholesale
+        assert resolved["tag"]["params"] == {"temperature": 0.2, "presence_penalty": 0}
+        assert ModelConfig(**resolved["answer"]).params["temperature"] == 0.4
