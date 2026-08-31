@@ -56,13 +56,20 @@ class GitRepo:
         self.path = Path(path)
 
     def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(
-            ["git", *args],
-            cwd=self.path,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["git", *args],
+                cwd=self.path,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            # cwd does not exist (e.g. a vault deregistered while a job was
+            # in flight), or `git` is not on PATH. Surface it as a GitError so
+            # callers that already handle GitError — rollback, restart recovery
+            # (§4.4) — do not crash on it.
+            raise GitError(f"git {' '.join(args)} could not start in {self.path}: {exc}") from exc
         if check and result.returncode != 0:
             raise GitError(
                 f"git {' '.join(args)} failed ({result.returncode}): {result.stderr.strip()}"
