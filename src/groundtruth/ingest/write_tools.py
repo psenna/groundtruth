@@ -9,6 +9,7 @@ all-or-nothing (§7.7) achievable.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,6 +17,38 @@ from typing import Any, ClassVar
 
 from ..models import NoteFrontmatter
 from ..storage.paths import UnsafePathError, resolve_in_vault, sanitize_title
+
+# --- argument normalisation ----------------------------------------------------
+# A local model, told "supply the folder, the title, and the body", still tends
+# to pass a *filename* as the title and to prepend its own YAML frontmatter to
+# the body. Neither is a content decision, so we normalise the tool arguments
+# here rather than fail the job (ADR-5 is about not silently sanitising the
+# model's *content*, not its packaging).
+
+_TITLE_EXT = re.compile(r"\.(?:md|markdown|txt)$", re.IGNORECASE)
+_LEADING_FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---[ \t]*\r?\n?", re.DOTALL)
+_FRONTMATTER_KEY = re.compile(r"(?im)^[ \t]*(?:tags|title|sources|created|updated|aliases)[ \t]*:")
+
+
+def _normalize_title(title: Any) -> Any:
+    """Drop a note-file extension the model tacked onto a *title* (``Foo.md`` →
+    ``Foo``). Keeps ``create_note("x", "Foo")`` and ``create_note("x", "Foo.md")``
+    pointing at the same path so the validator's duplicate check can see them.
+    """
+    return _TITLE_EXT.sub("", title).strip() if isinstance(title, str) else title
+
+
+def _strip_body_frontmatter(body: Any) -> Any:
+    """Remove a single leading ``---`` … ``---`` block the model prepended to the
+    body. The system owns frontmatter (tags/sources/timestamps); only strip when
+    the fenced block actually looks like frontmatter, never a stray rule.
+    """
+    if not isinstance(body, str):
+        return body
+    match = _LEADING_FRONTMATTER.match(body)
+    if match and _FRONTMATTER_KEY.search(match.group(1)):
+        return body[match.end() :].lstrip("\n")
+    return body
 
 
 @dataclass(frozen=True)
@@ -74,6 +107,8 @@ class WriteTools:
         return resolved.relative_to(self._root).as_posix()
 
     def create_note(self, folder: str, title: str, body: str) -> str:
+        title = _normalize_title(title)
+        body = _strip_body_frontmatter(body)
         try:
             rel = self._rel(folder, f"{sanitize_title(title)}.md")
         except UnsafePathError as exc:
@@ -86,6 +121,7 @@ class WriteTools:
         return f"created {rel}"
 
     def update_note(self, path: str, body: str) -> str:
+        body = _strip_body_frontmatter(body)
         try:
             rel = self._rel(path)
         except UnsafePathError as exc:
