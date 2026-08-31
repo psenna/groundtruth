@@ -95,6 +95,8 @@ class LLMClient:
     ) -> LLMResponse:
         model = self.model_for(role)
         payload: dict[str, Any] = {"model": model.model, "messages": list(messages)}
+        if model.reasoning_effort is not None:
+            payload["reasoning_effort"] = model.reasoning_effort
         if tools:
             payload["tools"] = list(tools)
 

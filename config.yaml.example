@@ -25,6 +25,9 @@ defaults:
       base_url: http://host.docker.internal:11434/v1
       model: qwen2.5:14b
       api_key_env: GT_API_KEY
+      # reasoning_effort: none   # sent as `reasoning_effort`; Ollama: `none` disables
+      #                          # thinking for Qwen3-class models. OpenAI: minimal|low|medium|high.
+      #                          # inherited by the roles below unless they set their own.
     tag:    {model: qwen2.5:7b}
     reduce: {model: qwen2.5:14b}
     answer: {model: qwen2.5:32b}
