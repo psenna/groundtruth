@@ -22,7 +22,7 @@ from datetime import date
 from typing import Any
 
 from ..config import VaultConfig
-from ..errors import GitConflictError, GroundtruthError, is_transient
+from ..errors import GitConflictError, GroundtruthError, MalformedLLMOutputError, is_transient
 from ..llm.client import LLMResponse
 from ..models import JobRecord, JobState, Note, NoteFrontmatter, SourceRecord, Vault
 from ..observability import log_stage
@@ -297,8 +297,21 @@ class IngestPipeline:
         prompt = render_prompt(
             TAG, schema_md=schema_md, derived_vocabulary=vocab, input_text="\n".join(reduced)
         )
-        response = self._complete(client, TAG, prompt, acc)
-        return parse_tags(response.text or "")
+        messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+        for attempt in range(1, _TAG_ATTEMPTS + 1):
+            response = self._complete(client, TAG, messages, acc)
+            try:
+                return parse_tags(response.text or "")
+            except MalformedLLMOutputError as exc:
+                if attempt == _TAG_ATTEMPTS:
+                    raise _StageFailureError("llm", str(exc), rollback=True) from exc
+                log_stage(acc.job_id, acc.vault, "llm", "retry", step="tag", reason=str(exc))
+                messages = [
+                    *messages,
+                    {"role": "assistant", "content": response.text or ""},
+                    {"role": "user", "content": _TAG_RETRY.format(error=exc)},
+                ]
+        raise AssertionError("unreachable: the loop returns or re-raises")
 
     def _organize_and_validate(
         self,
@@ -343,6 +356,14 @@ class IngestPipeline:
                 ),
             )
             pending, messages = drafted
+            if len(pending) == 0:
+                if attempt == attempts:
+                    raise _StageFailureError("llm", "organize produced no writes", rollback=True)
+                log_stage(
+                    acc.job_id, acc.vault, "llm", "retry", step="organize", reason="no writes"
+                )
+                conversation = [*messages, {"role": "user", "content": _NO_WRITES_FEEDBACK}]
+                continue
             pending.notes[:] = [_stamp(note, tags, sha, today) for note in pending]
             try:
                 self._stage(
@@ -393,13 +414,14 @@ class IngestPipeline:
             raise _StageFailureError("llm", "organize budget exhausted", rollback=True)
         if outcome.status is AgentStatus.FAILED:
             raise _StageFailureError("llm", outcome.error or "organize failed", rollback=True)
-        if len(tools.pending) == 0:
-            raise _StageFailureError("llm", "organize produced no writes", rollback=True)
         return tools.pending, outcome.messages
 
-    def _complete(self, client: Any, role: str, prompt: str, acc: _Accum) -> LLMResponse:
+    def _complete(
+        self, client: Any, role: str, prompt: str | list[dict[str, Any]], acc: _Accum
+    ) -> LLMResponse:
+        messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
         try:
-            response: LLMResponse = client.complete(role, [{"role": "user", "content": prompt}])
+            response: LLMResponse = client.complete(role, messages)
         except GroundtruthError as exc:
             if is_transient(exc):
                 raise  # handled by run()'s transient branch -> worker retry (#28)
@@ -456,6 +478,21 @@ _RETRY_HINTS: dict[str, str] = {
     "duplicate_path": "You staged the same path twice — merge those into one call.",
     "filename": ("Keep the title plain: no slashes, no leading dots, no path segments."),
 }
+
+
+#: Tag-step attempts (the first, plus one re-prompt with the parse error).
+_TAG_ATTEMPTS = 2
+
+_TAG_RETRY = (
+    "That was not a usable tag list: {error}. Reply with ONLY the tags — one per "
+    "line, lowercase and hyphen-separated, no prose, no numbering, no parentheses."
+)
+
+_NO_WRITES_FEEDBACK = (
+    "You finished without calling create_note or update_note, so nothing would be "
+    "saved. Every ingest must write at least one note. Go through the distilled "
+    "items again and call the write tools now."
+)
 
 
 def _retry_feedback(rejection: ValidationRejectionError) -> str:

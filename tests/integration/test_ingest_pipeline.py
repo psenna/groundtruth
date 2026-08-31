@@ -375,3 +375,76 @@ class TestOrganizeRetry:
         assert job.state is JobState.FAILED
         assert job.failure_stage == "write-validation"
         assert client.calls == 5  # survey, reduce, tag, one organize turn (tool + done) — no retry
+
+    def test_organize_no_writes_is_retried_then_succeeds(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = [
+            _text("none"),
+            _text("- Acme Corp was founded in 1996."),
+            _text("company"),
+            _text("I don't think anything needs writing."),  # organize attempt 1 — no tool call
+            *_organize_turn("Founded 1996."),  # attempt 2 — writes
+        ]
+        client = RecordingClient(responses)
+        job = _run(pipeline, vault, client, _config())
+
+        assert job.state is JobState.SUCCEEDED
+        assert job.notes_created == ["companies/Acme Corp.md"]
+        fed_back = " ".join(str(m.get("content") or "") for msgs in client.seen for m in msgs)
+        assert "must write at least one note" in fed_back
+
+    def test_organize_no_writes_exhausted_fails(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = [
+            _text("none"),
+            _text("- f"),
+            _text("company"),
+            _text("nothing to do"),  # attempt 1
+            _text("still nothing"),  # attempt 2
+        ]
+        job = _run(pipeline, vault, ScriptedClient(responses), _config())
+
+        assert job.state is JobState.FAILED
+        assert job.failure_stage == "llm"
+        assert "no writes" in (job.error or "")
+        assert GitRepo(vault.repo_root).is_clean()
+
+
+class TestTagRetry:
+    def test_unparseable_tags_are_retried_with_the_error(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = [
+            _text("none"),
+            _text("- Acme Corp was founded in 1996."),
+            _text("kubernetes (implied but not explicit — let's stick to explicit tech)"),  # bad
+            _text("company"),  # retry — clean
+            *_organize_turn("Founded 1996."),
+        ]
+        client = RecordingClient(responses)
+        job = _run(pipeline, vault, client, _config())
+
+        assert job.state is JobState.SUCCEEDED
+        fed_back = " ".join(str(m.get("content") or "") for msgs in client.seen for m in msgs)
+        assert "not a usable tag list" in fed_back
+
+    def test_persistently_bad_tags_fail_the_job_at_llm(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = [
+            _text("none"),
+            _text("- f"),
+            _text("Tag: kubernetes (maybe?)"),  # attempt 1
+            _text("still: not a tag list"),  # attempt 2
+        ]
+        job = _run(pipeline, vault, ScriptedClient(responses), _config())
+
+        assert job.state is JobState.FAILED
+        assert job.failure_stage == "llm"
+        assert GitRepo(vault.repo_root).is_clean()

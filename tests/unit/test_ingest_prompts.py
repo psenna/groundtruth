@@ -49,6 +49,13 @@ class TestTemplates:
         assert "claims" in text and "relationship" in text
         assert "narration" in text and "hedging" in text and "restatement" in text
 
+    def test_tag_prompt_bounds_count_and_forbids_prose(self) -> None:
+        text = load_template(TAG).lower()
+        assert "2 to 6" in text  # a count band, not "tag everything"
+        assert "primary subject" in text
+        assert "in passing" in text  # mentions are not tags
+        assert "no prose" in text and "parenthes" in text
+
     def test_organize_prompt_states_granularity_and_conflict_rules(self) -> None:
         text = load_template(ORGANIZE).lower()
         assert "one note per topic" in text

@@ -22,7 +22,14 @@ Rules:
 - Every tag MUST be normalized: lowercase, words separated by single hyphens. No spaces,
   no uppercase letters, no underscores. A tag that is not normalized will be rejected and
   the whole ingest will fail.
-- Output one tag per line, and nothing else — no prose, no numbering, no bullets.
+- **Tag only what the note is actually about.** A tag names a primary subject of the
+  note — not every technology, tool, or concept the text happens to mention. If something
+  appears once, as an example, or in passing, it is not a tag. Most notes need **2 to 6
+  tags**; if you find yourself listing ten, you are tagging things the note merely
+  mentions.
+- Output the tags and **nothing else** — one per line, no numbering, no bullets, no
+  "Tags:" heading, no prose, no reasoning, no parentheses explaining a choice. If you are
+  unsure whether a tag belongs, leave it out.
 
 ## Note text
 
