@@ -57,6 +57,16 @@ class TestIsClean:
         (repo.path / "new.md").write_text("new\n")
         assert repo.is_clean() is False
 
+    def test_missing_path_raises_giterror_not_oserror(self, tmp_path: Path) -> None:
+        # A vault deregistered mid-job leaves GitRepo pointed at a path that no
+        # longer exists; subprocess can't chdir into it. It must surface as
+        # GitError so rollback / restart recovery catch it, not crash startup.
+        from groundtruth.storage.git import GitError
+
+        gone = GitRepo(tmp_path / "does-not-exist")
+        with pytest.raises(GitError):
+            gone.is_clean()
+
 
 class TestCommit:
     def test_uses_groundtruth_identity_not_operator(self, repo: GitRepo) -> None:

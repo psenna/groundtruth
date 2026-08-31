@@ -114,6 +114,24 @@ class TestRecovery:
         assert (tmp_path / "state" / "jobs" / "quarantine" / "01BAD.json").exists()
         assert store.load("01GOOD") is not None  # good record still processed
 
+    def test_interrupted_job_for_deregistered_vault_is_failed_not_crashed(
+        self, tmp_path: Path
+    ) -> None:
+        # The vault was deregistered while this job was in flight, so
+        # repo_root_of returns a path that does not exist. Recovery must still
+        # mark the job failed and must not crash startup (regression: a missing
+        # cwd raised FileNotFoundError straight out of subprocess).
+        store = JobStore(tmp_path / "state")
+        store.create(JobRecord(id="01GONE", vault="removed"))
+        store.update(store.load("01GONE").transitioned_to(JobState.RUNNING))
+        missing = tmp_path / "no-such-vault"
+
+        report = recover_on_startup(store, repo_root_of=lambda _v: missing)
+
+        assert store.load("01GONE").state is JobState.FAILED
+        assert report.failed_interrupted == ["01GONE"]
+        assert report.rolled_back == []  # nothing to roll back — repo is gone
+
     def test_recovery_is_idempotent(self, tmp_path: Path, repo: Path) -> None:
         store = JobStore(tmp_path / "state")
         store.create(JobRecord(id="01RUN", vault="work"))
