@@ -90,6 +90,39 @@ class TestRules:
         assert len(tools.pending) == 0
 
 
+class TestArgumentNormalisation:
+    def test_title_with_md_extension_is_stripped(self) -> None:
+        tools = _tools()
+        msg = tools.create_note("projects", "core_engine.md", "body")
+        assert "projects/core_engine.md" in msg
+        assert tools.pending.notes[0].path == "projects/core_engine.md"
+        assert tools.pending.notes[0].title == "core_engine"
+
+    def test_md_and_bare_title_collide_so_the_dup_check_can_catch_them(self) -> None:
+        tools = _tools()
+        assert "created" in tools.create_note("projects", "Usage", "a")
+        second = tools.create_note("projects", "Usage.md", "b")  # same note, filename-y title
+        assert "already staged" in second
+        assert len(tools.pending) == 1
+
+    def test_leading_frontmatter_block_is_removed_from_body(self) -> None:
+        tools = _tools()
+        body = "---\ntags:\n  - acme\n  - vendor\n---\n\n# Acme\n\nAcme ships widgets.\n"
+        tools.create_note("companies", "Acme", body)
+        assert tools.pending.notes[0].body == "# Acme\n\nAcme ships widgets.\n"
+
+    def test_update_note_also_strips_body_frontmatter(self) -> None:
+        tools = _tools({"companies/Acme.md"})
+        tools.update_note("companies/Acme.md", "---\ntitle: Acme\n---\nnew body\n")
+        assert tools.pending.notes[0].body == "new body\n"
+
+    def test_a_stray_horizontal_rule_is_not_mistaken_for_frontmatter(self) -> None:
+        tools = _tools()
+        body = "---\nJust a themed break, not YAML.\n---\nMore text.\n"
+        tools.create_note("f", "N", body)
+        assert tools.pending.notes[0].body == body  # untouched
+
+
 class TestDispatch:
     def test_dispatch_routes_to_the_named_tool(self) -> None:
         tools = _tools({"a/b.md"})
