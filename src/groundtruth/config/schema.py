@@ -18,6 +18,11 @@ class ModelConfig(BaseModel):
     model: str
     #: Name of the environment variable holding the API key — never the key itself (§11.4).
     api_key_env: str
+    #: Reasoning/thinking effort, sent verbatim as ``reasoning_effort`` on the
+    #: chat-completions request when set. OpenAI accepts ``minimal``/``low``/
+    #: ``medium``/``high``; Ollama maps ``none`` to "thinking off" for models
+    #: like Qwen3. Leave unset to send nothing (the backend's own default).
+    reasoning_effort: str | None = None
 
     def resolve_api_key(self, environ: Mapping[str, str]) -> str | None:
         """Look up the API key in ``environ`` at use time (spec §11.4)."""

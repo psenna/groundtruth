@@ -155,6 +155,10 @@ config:
         base_url: http://llm:11434/v1
         model: qwen2.5:14b
         api_key_env: GT_API_KEY
+        # -- Sent as `reasoning_effort` on every call for this role (and the
+        # roles below, which inherit it). Ollama: `none` turns off thinking for
+        # Qwen3-class models. OpenAI: minimal|low|medium|high. Omit to send nothing.
+        # reasoning_effort: none
       tag: {model: qwen2.5:7b}
       reduce: {model: qwen2.5:14b}
       answer: {model: qwen2.5:32b}

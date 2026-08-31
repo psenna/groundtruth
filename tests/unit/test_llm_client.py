@@ -198,3 +198,50 @@ class TestParsing:
         assert result.usage.prompt_tokens == 11
         assert result.usage.completion_tokens == 7
         assert result.usage.total_tokens == 18
+
+
+class TestReasoningEffort:
+    @staticmethod
+    def _payload_for(models: dict[str, ModelConfig], role: str) -> dict:
+        seen: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.update(json.loads(request.content))
+            return httpx.Response(200, json=_ok_body())
+
+        client = LLMClient(
+            models,
+            environ={KEY_ENV: KEY_VALUE},
+            transport=httpx.MockTransport(handler),
+        )
+        client.complete(role, [{"role": "user", "content": "x"}])
+        return seen
+
+    def test_absent_when_unset(self) -> None:
+        payload = self._payload_for(_models(), "tag")
+        assert "reasoning_effort" not in payload
+
+    def test_sent_verbatim_when_set(self) -> None:
+        base = {"base_url": "https://llm.local/v1", "api_key_env": KEY_ENV}
+        models = {
+            "default": ModelConfig(model="d", reasoning_effort="none", **base),
+            "tag": ModelConfig(model="t", **base),
+        }
+        assert self._payload_for(models, "default")["reasoning_effort"] == "none"
+
+    def test_inherited_by_role_via_config_resolution(self) -> None:
+        from groundtruth.config.loader import _resolve_model_roles
+
+        resolved = _resolve_model_roles(
+            {
+                "default": {
+                    "base_url": "u",
+                    "model": "d",
+                    "api_key_env": "K",
+                    "reasoning_effort": "low",
+                },
+                "tag": {"model": "t"},
+            }
+        )
+        assert resolved["tag"]["reasoning_effort"] == "low"
+        assert ModelConfig(**resolved["tag"]).reasoning_effort == "low"
