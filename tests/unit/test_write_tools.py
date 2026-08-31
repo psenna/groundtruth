@@ -122,6 +122,21 @@ class TestArgumentNormalisation:
         tools.create_note("f", "N", body)
         assert tools.pending.notes[0].body == body  # untouched
 
+    def test_unfenced_frontmatter_lines_are_removed_from_body(self) -> None:
+        tools = _tools()
+        body = (
+            "tags:\n- ai-sandbox\n- validation\nsources:\n- distilled-design-specification\n"
+            "\n# AI Sandbox Overview\n\nReal content here.\n"
+        )
+        tools.create_note("f", "N", body)
+        assert tools.pending.notes[0].body == "# AI Sandbox Overview\n\nReal content here.\n"
+
+    def test_body_that_merely_starts_with_a_colon_word_is_left_alone(self) -> None:
+        tools = _tools()
+        body = "Note: this is ordinary prose that happens to start with a word and colon.\n"
+        tools.create_note("f", "N", body)
+        assert tools.pending.notes[0].body == body
+
 
 class TestDispatch:
     def test_dispatch_routes_to_the_named_tool(self) -> None:

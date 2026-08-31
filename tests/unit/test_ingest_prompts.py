@@ -48,6 +48,10 @@ class TestTemplates:
         assert "keep" in text and "discard" in text
         assert "claims" in text and "relationship" in text
         assert "narration" in text and "hedging" in text and "restatement" in text
+        # inference is out: no "this suggests" / connecting facts into a third
+        assert "inference" in text
+        assert "this suggests" in text
+        assert "traceable to a sentence" in text
 
     def test_tag_prompt_bounds_count_and_forbids_prose(self) -> None:
         text = load_template(TAG).lower()
@@ -66,6 +70,10 @@ class TestTemplates:
         # the full valid-link-target list is offered, and dangling links are called out
         assert "{{existing_note_paths}}" in text
         assert "dangling link" in text
+        # no invented sub-folders, no frontmatter in the body, stay on topic
+        assert "sub-folder" in text
+        assert "stay on the input's subject" in text
+        assert "do **not** put a `---` frontmatter block" in text
 
 
 class TestTagParsing:

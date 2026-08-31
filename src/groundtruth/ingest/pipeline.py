@@ -392,7 +392,7 @@ class IngestPipeline:
                 )
                 conversation = [
                     *messages,
-                    {"role": "user", "content": _retry_feedback(rejection)},
+                    {"role": "user", "content": _retry_feedback(rejection, schema)},
                 ]
                 continue
             return pending
@@ -467,8 +467,10 @@ _RETRY_HINTS: dict[str, str] = {
         "instead of update_note."
     ),
     "folder": (
-        "Create notes only in a folder declared in the schema above. Use the "
-        "closest declared folder."
+        "Create notes only in a folder that is declared verbatim in the schema — "
+        "do not add a sub-folder of your own (`projects/x/ci/` is not allowed if "
+        "only `projects/x/` is declared). Put the note in the closest declared "
+        "folder instead."
     ),
     "note_count": (
         "Too many notes touched. Consolidate to one note per topic or entity "
@@ -495,8 +497,11 @@ _NO_WRITES_FEEDBACK = (
 )
 
 
-def _retry_feedback(rejection: ValidationRejectionError) -> str:
+def _retry_feedback(rejection: ValidationRejectionError, schema: Schema | None = None) -> str:
     hint = _RETRY_HINTS.get(rejection.rule, "")
+    if rejection.rule == "folder" and schema is not None:
+        allowed = ", ".join(sorted(schema.folders)) or "(none)"
+        hint = f"{hint}\nThe only folders you may use: {allowed}"
     return (
         f"STOP — the validator rejected the notes and nothing was saved:\n\n"
         f"    {rejection}\n\n"
