@@ -35,6 +35,11 @@ class JobResponse(BaseModel):
     notes_created: list[str] = []
     notes_updated: list[str] = []
     attempts: int = 1
+    attempt_errors: list[str] = []
+    source_sha: str | None = None
+    source_bytes: int | None = None
+    stage_timings: dict[str, float] = {}
+    token_usage: dict[str, int] = {}
     created_at: datetime | None = None
     started_at: datetime | None = None
     updated_at: datetime | None = None
@@ -52,6 +57,11 @@ class JobResponse(BaseModel):
             notes_created=record.notes_created,
             notes_updated=record.notes_updated,
             attempts=record.attempts,
+            attempt_errors=[redact(e) for e in record.attempt_errors],
+            source_sha=record.source_sha,
+            source_bytes=record.source_bytes,
+            stage_timings=record.stage_timings,
+            token_usage=record.token_usage,
             created_at=record.created_at,
             started_at=record.started_at,
             updated_at=record.updated_at,

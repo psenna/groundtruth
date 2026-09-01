@@ -15,6 +15,7 @@
         <th>State</th>
         <th>Vault</th>
         <th class="hide-sm">Notes</th>
+        <th class="hide-sm num">Text</th>
         <th class="hide-sm num">Waited</th>
         <th class="hide-sm num">Ran</th>
         <th class="num">Started</th>
@@ -36,15 +37,21 @@
           {% elif j.state == "failed" %}<span class="subtle">—</span>
           {% else %}<span class="subtle">…</span>{% endif %}
         </td>
+        <td class="hide-sm num subtle">{{ j.text_size }}</td>
         <td class="hide-sm num subtle">{{ j.waited }}</td>
         <td class="hide-sm num">{{ j.ran }}</td>
         <td class="num subtle">{{ j.created }}</td>
-        <td><span class="mono-id">{{ j.id[:12] }}</span></td>
+        <td>
+          <button type="button" class="job-open mono-id"
+                  hx-get="/ui/jobs/{{ j.id }}/detail"
+                  hx-target="#job-modal-body"
+                  onclick="document.getElementById('job-modal').showModal()">{{ j.id[:12] }}</button>
+        </td>
       </tr>
       {% if j.state == "failed" and j.error %}
       <tr>
         <td></td>
-        <td colspan="6" class="subtle" style="padding-top:0;">
+        <td colspan="7" class="subtle" style="padding-top:0;">
           <span style="color:var(--err);">✗ {{ j.failure_stage }}</span> — {{ j.error }}
         </td>
       </tr>

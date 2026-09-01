@@ -95,7 +95,9 @@ class IngestPipeline:
         prior = self._jobs.load(job_id)
         job = prior or self._jobs.create(JobRecord(id=job_id, vault=vault.name))
         job = self._jobs.update(
-            job.model_copy(update={"source_sha": sha}).transitioned_to(JobState.RUNNING)
+            job.model_copy(
+                update={"source_sha": sha, "source_bytes": len(text.encode("utf-8"))}
+            ).transitioned_to(JobState.RUNNING)
         )
 
         try:

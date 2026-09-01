@@ -24,6 +24,7 @@ from ..api.ingest import JobResponse
 from ..api.services import Services
 from ..models import JobRecord, JobState, Refusal
 from ..recovery.format import render_answer, render_refusal
+from ..redaction import redact
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _WIKILINK = re.compile(r"\[\[([^\[\]|]+?)\]\]")
@@ -43,6 +44,16 @@ def _clock(seconds: float) -> str:
     if seconds < 0:
         seconds = 0
     return f"{seconds:.1f}s" if seconds < 60 else f"{seconds / 60:.1f}m"
+
+
+def _bytes(n: int | None) -> str:
+    if n is None:
+        return "—"
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    return f"{n / (1024 * 1024):.1f} MB"
 
 
 def _waited(rec: JobRecord, now: datetime) -> str:
@@ -69,6 +80,7 @@ def _job_row(rec: JobRecord, now: datetime) -> dict[str, Any]:
         "created": _ago(rec.created_at, now),
         "waited": _waited(rec, now),
         "ran": _ran(rec, now),
+        "text_size": _bytes(rec.source_bytes),
         "notes": len(rec.notes_created) + len(rec.notes_updated),
         "created_n": len(rec.notes_created),
         "updated_n": len(rec.notes_updated),
@@ -77,6 +89,35 @@ def _job_row(rec: JobRecord, now: datetime) -> dict[str, Any]:
         "error": rec.error,
         "attempts": rec.attempts,
     }
+
+
+def _iso(when: datetime | None) -> str | None:
+    return when.isoformat(timespec="seconds") if when else None
+
+
+def _job_detail(rec: JobRecord, now: datetime) -> dict[str, Any]:
+    """Everything on a job record, shaped for the overlay."""
+    row = _job_row(rec, now)
+    row["error"] = redact(rec.error) if rec.error else None
+    row.update(
+        {
+            "source_sha": rec.source_sha,
+            "commit_sha": rec.commit_sha,
+            "dedup_of": rec.dedup_of,
+            "notes_created": list(rec.notes_created),
+            "notes_updated": list(rec.notes_updated),
+            "stage_timings": [
+                {"stage": s, "seconds": f"{v:.1f}"} for s, v in rec.stage_timings.items()
+            ],
+            "token_usage": [{"role": r, "tokens": t} for r, t in rec.token_usage.items()],
+            "tokens_total": sum(rec.token_usage.values()),
+            "attempt_errors": [redact(e) for e in rec.attempt_errors],
+            "created_at": _iso(rec.created_at),
+            "started_at": _iso(rec.started_at),
+            "updated_at": _iso(rec.updated_at),
+        }
+    )
+    return row
 
 
 def _queue_context(services: Services, limit: int) -> dict[str, Any]:
@@ -135,6 +176,11 @@ def build_web_router(services: Services) -> APIRouter:
     def job_status(request: Request, job_id: str) -> Any:
         job = JobResponse.of(services.get_job(job_id)).model_dump()
         return _TEMPLATES.TemplateResponse(request, "_job.html", {"job": job})
+
+    @router.get("/ui/jobs/{job_id}/detail", response_class=HTMLResponse)
+    def job_detail(request: Request, job_id: str) -> Any:
+        job = _job_detail(services.get_job(job_id), datetime.now(UTC))
+        return _TEMPLATES.TemplateResponse(request, "_job_detail.html", {"job": job})
 
     @router.get("/queue", response_class=HTMLResponse)
     def queue_view(request: Request, limit: int = 100) -> Any:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from groundtruth.models import JobRecord, JobState
-from groundtruth.web.views import _ran, _waited
+from groundtruth.web.views import _bytes, _job_detail, _ran, _waited
 
 _T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -47,3 +47,48 @@ class TestRan:
     def test_never_started_is_a_dash(self) -> None:
         rec = _rec(state=JobState.FAILED, created_at=_T0, updated_at=_T0 + timedelta(seconds=1))
         assert _ran(rec, _T0 + timedelta(seconds=2)) == "—"
+
+
+class TestBytes:
+    def test_scales_units(self) -> None:
+        assert _bytes(None) == "—"
+        assert _bytes(512) == "512 B"
+        assert _bytes(2048) == "2.0 KB"
+        assert _bytes(3 * 1024 * 1024) == "3.0 MB"
+
+
+class TestJobDetail:
+    def test_shapes_the_full_record_for_the_overlay(self) -> None:
+        rec = _rec(
+            state=JobState.SUCCEEDED,
+            created_at=_T0,
+            started_at=_T0 + timedelta(seconds=3),
+            updated_at=_T0 + timedelta(seconds=63),
+            source_bytes=4096,
+            source_sha="abc123",
+            commit_sha="def456",
+            stage_timings={"retrieval": 12.3, "llm": 40.0},
+            token_usage={"reduce": 100, "tag": 20},
+            notes_created=["a/b.md"],
+            attempt_errors=["first try boom"],
+        )
+        d = _job_detail(rec, _T0 + timedelta(seconds=63))
+        assert d["text_size"] == "4.0 KB"
+        assert d["waited"] == "3.0s"
+        assert d["ran"] == "1.0m"
+        assert d["tokens_total"] == 120
+        assert {t["stage"] for t in d["stage_timings"]} == {"retrieval", "llm"}
+        assert d["notes_created"] == ["a/b.md"]
+        assert d["attempt_errors"] == ["first try boom"]
+        assert d["created_at"] == "2026-01-01T12:00:00+00:00"
+
+    def test_redacts_errors(self) -> None:
+        rec = _rec(
+            state=JobState.FAILED,
+            created_at=_T0,
+            error="boom sk-ABCDEF0123456789ABCDEFGH",
+            attempt_errors=["earlier sk-ABCDEF0123456789ABCDEFGH"],
+        )
+        d = _job_detail(rec, _T0)
+        assert "sk-ABCDEF0123456789ABCDEFGH" not in d["error"]
+        assert "sk-ABCDEF0123456789ABCDEFGH" not in d["attempt_errors"][0]

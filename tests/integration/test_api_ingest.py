@@ -159,6 +159,8 @@ class TestJobs:
         got = client.get(f"/jobs/{job_id}").json()
         assert got["id"] == job_id
         assert got["state"] == "succeeded"
+        assert got["source_bytes"] == len(TEXT.encode())
+        assert "started_at" in got and "stage_timings" in got and "token_usage" in got
 
     def test_unknown_job_is_404(self, env: tuple[TestClient, Services, Path]) -> None:
         client, _, _ = env
