@@ -31,6 +31,18 @@ covering a company, its products, and its contract terms becomes a small number 
 sentence and not one note per fact. When an item belongs in a note that already exists,
 update that note rather than creating a near-duplicate.
 
+**Before creating a note, check whether one already covers the subject.** Read the
+"Notes that already exist" list and "Every note path in the vault" above before every
+`create_note`. If a note is already about substantially the same subject, call
+`update_note` on it — fold the new material into what is there. Two notes about
+substantially the same subject is the failure this rule exists to prevent.
+
+**A different aspect of the same subject is not a different note.** "Go client
+configuration" and "Python client configuration" are one note — *client configuration* —
+with a section each, not two notes. Setup, usage, internals, and troubleshooting of one
+component belong in that component's note until a section genuinely outgrows it. Three or
+four substantial notes about a project are better than six thin overlapping ones.
+
 **Do not both write an overview note and split its sections into their own notes.** Pick
 one shape. If the material fits in one note, write one note. Only split off a section into
 its own note when that section is substantial enough to stand alone.

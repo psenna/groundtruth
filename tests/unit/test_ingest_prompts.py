@@ -78,6 +78,10 @@ class TestTemplates:
         assert "split its sections into their own notes" in text
         assert "every note must carry substance" in text
         assert "only a pointer" in text
+        # check for an existing note before creating; aspects are not separate notes
+        assert "before creating a note, check whether one already covers" in text
+        assert "substantially the same subject" in text
+        assert "a different aspect of the same subject is not a different note" in text
 
 
 class TestTagParsing:
