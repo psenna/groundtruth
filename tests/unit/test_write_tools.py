@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import inspect
 
-from groundtruth.ingest.write_tools import PendingWrites, WriteTools
+from groundtruth.ingest.write_tools import BUDGET_EXHAUSTED, PendingWrites, WriteTools
+from groundtruth.retrieval.budget import Budget, BudgetLimits
 
 
 def _tools(existing: set[str] | None = None) -> WriteTools:
@@ -150,3 +151,28 @@ class TestDispatch:
         public = {n for n in dir(WriteTools) if not n.startswith("_")}
         for banned in ("commit", "flush", "apply", "write", "delete", "remove", "save"):
             assert banned not in public
+
+
+class TestBudget:
+    def test_each_dispatch_charges_the_budget_and_stops_when_spent(self) -> None:
+        budget = Budget(BudgetLimits(max_tool_calls=2))
+        tools = WriteTools(vault_root="/vault", existing_paths=set(), budget=budget)
+
+        assert "created" in tools.dispatch(
+            "create_note", {"folder": "f", "title": "A", "body": "x"}
+        )
+        assert "created" in tools.dispatch(
+            "create_note", {"folder": "f", "title": "B", "body": "x"}
+        )
+        # third call: budget spent, refuses, note not buffered
+        assert tools.dispatch("create_note", {"folder": "f", "title": "C", "body": "x"}) == (
+            BUDGET_EXHAUSTED
+        )
+        assert len(tools.pending) == 2
+        assert budget.exhausted
+
+    def test_unmetered_when_no_budget_given(self) -> None:
+        tools = _tools()
+        for i in range(50):
+            tools.dispatch("create_note", {"folder": "f", "title": f"N{i}", "body": "x"})
+        assert len(tools.pending) == 50

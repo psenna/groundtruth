@@ -415,7 +415,7 @@ class IngestPipeline:
         conversation: str | list[dict[str, Any]],
     ) -> tuple[PendingWrites, list[dict[str, Any]]]:
         budget = Budget(BudgetLimits.from_limits(config.limits))
-        tools = WriteTools(vault.vault_dir, existing_paths=existing)
+        tools = WriteTools(vault.vault_dir, existing_paths=existing, budget=budget)
         outcome = run_agent(client, ORGANIZE, conversation, tools, budget)
         if outcome.status is AgentStatus.EXHAUSTED:
             raise _StageFailureError("llm", "organize budget exhausted", rollback=True)

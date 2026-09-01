@@ -13,10 +13,13 @@ import re
 from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..models import NoteFrontmatter
 from ..storage.paths import UnsafePathError, resolve_in_vault, sanitize_title
+
+if TYPE_CHECKING:
+    from ..retrieval.budget import Budget
 
 # --- argument normalisation ----------------------------------------------------
 # A local model, told "supply the folder, the title, and the body", still tends
@@ -110,12 +113,27 @@ class PendingWrites:
         return [note.path for note in self.notes]
 
 
-class WriteTools:
-    """LLM-callable buffered write tools for one ingest job."""
+#: Returned (not raised) once the budget is spent — mirrors ReadOnlyTools.
+BUDGET_EXHAUSTED = "[budget exhausted: no further tool calls permitted]"
 
-    def __init__(self, vault_root: Path | str, existing_paths: Collection[str]) -> None:
+
+class WriteTools:
+    """LLM-callable buffered write tools for one ingest job, metered by a Budget.
+
+    Like the read-only tools, every ``dispatch`` charges the agent budget so the
+    organize loop is bounded by ``max_tool_calls`` — not just by the loop's hard
+    cap. A ``None`` budget leaves calls unmetered (used only in unit tests).
+    """
+
+    def __init__(
+        self,
+        vault_root: Path | str,
+        existing_paths: Collection[str],
+        budget: Budget | None = None,
+    ) -> None:
         self._root = Path(vault_root).resolve()
         self._existing = set(existing_paths)
+        self.budget = budget
         self.pending = PendingWrites()
 
     def _rel(self, *parts: str) -> str:
@@ -150,6 +168,10 @@ class WriteTools:
         return f"updated {rel}"
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> str:
+        if self.budget is not None:
+            if self.budget.exhausted:
+                return BUDGET_EXHAUSTED
+            self.budget.record_tool_call()
         if name == "create_note":
             return self.create_note(arguments["folder"], arguments["title"], arguments["body"])
         if name == "update_note":
