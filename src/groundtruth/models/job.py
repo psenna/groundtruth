@@ -52,6 +52,8 @@ class JobRecord(BaseModel):
     notes_updated: list[str] = Field(default_factory=list)
 
     source_sha: str | None = None
+    #: Size in UTF-8 bytes of the ingested text.
+    source_bytes: int | None = None
     commit_sha: str | None = None
 
     #: On failure: the stage that failed and the error message.

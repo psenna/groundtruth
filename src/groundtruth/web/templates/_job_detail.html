@@ -1,0 +1,51 @@
+<header class="jd-head">
+  <span class="badge {{ job.state }}">{{ job.state }}</span>
+  <span class="mono-id">{{ job.id }}</span>
+  {% if job.attempts > 1 %}<span class="subtle">· attempt {{ job.attempts }}</span>{% endif %}
+</header>
+
+{% if job.state == "failed" %}
+<p class="jd-error">✗ failed at <strong>{{ job.failure_stage }}</strong> — {{ job.error }}</p>
+{% elif job.deduplicated %}
+<p class="subtle">Deduplicated — matched prior ingest <code>{{ job.dedup_of }}</code>.</p>
+{% endif %}
+
+<dl class="jd-grid">
+  <dt>Vault</dt><dd>{{ job.vault }}</dd>
+  <dt>Text size</dt><dd>{{ job.text_size }}</dd>
+  <dt>Waited</dt><dd>{{ job.waited }}</dd>
+  <dt>Ran</dt><dd>{{ job.ran }}</dd>
+  <dt>Created</dt><dd class="mono">{{ job.created_at or "—" }}</dd>
+  <dt>Started</dt><dd class="mono">{{ job.started_at or "—" }}</dd>
+  <dt>Updated</dt><dd class="mono">{{ job.updated_at or "—" }}</dd>
+  <dt>Source sha</dt><dd class="mono">{{ (job.source_sha or "—")[:16] }}</dd>
+  <dt>Commit</dt><dd class="mono">{{ (job.commit_sha or "—")[:16] }}</dd>
+</dl>
+
+{% if job.stage_timings %}
+<h4>Stage timings</h4>
+<table class="jd-mini">
+  {% for t in job.stage_timings %}<tr><td>{{ t.stage }}</td><td class="num">{{ t.seconds }}s</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+{% if job.token_usage %}
+<h4>Tokens <span class="subtle">· {{ job.tokens_total }} total</span></h4>
+<table class="jd-mini">
+  {% for u in job.token_usage %}<tr><td>{{ u.role }}</td><td class="num">{{ u.tokens }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+{% if job.notes_created %}
+<h4>Created <span class="subtle">· {{ job.notes_created|length }}</span></h4>
+<ul class="jd-notes">{% for p in job.notes_created %}<li class="mono">{{ p }}</li>{% endfor %}</ul>
+{% endif %}
+{% if job.notes_updated %}
+<h4>Updated <span class="subtle">· {{ job.notes_updated|length }}</span></h4>
+<ul class="jd-notes">{% for p in job.notes_updated %}<li class="mono">{{ p }}</li>{% endfor %}</ul>
+{% endif %}
+
+{% if job.attempt_errors %}
+<h4>Earlier attempts</h4>
+<ol class="jd-notes">{% for e in job.attempt_errors %}<li>{{ e }}</li>{% endfor %}</ol>
+{% endif %}

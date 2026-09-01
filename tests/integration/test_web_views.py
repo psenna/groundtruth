@@ -109,6 +109,26 @@ class TestQueueView:
     def test_empty_queue_has_a_friendly_message(self, client) -> None:  # type: ignore[no-untyped-def]
         assert "No ingest jobs yet" in client([]).get("/queue").text
 
+    def test_row_opens_a_job_detail_overlay(self, client, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+        c = client([])
+        (tmp_path / "repo" / "work" / "dirty.md").write_text("x\n")  # force fail
+        body = c.post("/ui/ingest", data={"vault": "work", "text": "some text here"}).text
+        job_id = body.split('data-job-id="')[1].split('"')[0]
+        for _ in range(50):
+            if "badge failed" in c.get("/queue").text:
+                break
+            time.sleep(0.05)
+
+        page = c.get("/queue").text
+        assert '<th class="hide-sm num">Text</th>' in page  # new column
+        assert f'hx-get="/ui/jobs/{job_id}/detail"' in page  # row opens the overlay
+        assert 'id="job-modal"' in page  # the dialog exists
+
+        detail = c.get(f"/ui/jobs/{job_id}/detail").text
+        assert "Text size" in detail
+        assert "14 B" in detail  # len("some text here")
+        assert "clean-tree" in detail  # failure stage in the overlay
+
 
 class TestQueryView:
     def test_answer_renders_with_citation_links_into_browse(self, client) -> None:  # type: ignore[no-untyped-def]

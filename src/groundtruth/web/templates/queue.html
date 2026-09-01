@@ -15,4 +15,9 @@
      hx-swap="innerHTML">
   {% include "_queue_table.html" %}
 </div>
+
+<dialog id="job-modal" class="job-modal">
+  <form method="dialog" class="job-modal-close"><button aria-label="Close">✕</button></form>
+  <div id="job-modal-body"><p class="subtle">Loading…</p></div>
+</dialog>
 {% endblock %}
