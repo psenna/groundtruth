@@ -590,3 +590,15 @@ class TestPerNoteTagging:
         bob = (vault.vault_dir / "people" / "Bob.md").read_text()
         assert "tags: [company, vendor]" in acme
         assert "tags: [person]" in bob
+
+    def test_the_tag_prompt_carries_the_notes_own_path(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        # #115: the per-note tag call is given the note's own path so its tags
+        # stay anchored to its home topic.
+        pipeline, vault, _ = env
+        client = RecordingClient(_happy_responses())
+        job = _run(pipeline, vault, client, _config())
+
+        assert job.state is JobState.SUCCEEDED
+        assert "companies/Acme Corp.md" in str(client.seen[-1])  # the tag call

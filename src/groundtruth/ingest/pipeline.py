@@ -290,11 +290,27 @@ class IngestPipeline:
         response = self._complete(client, REDUCE, prompt, acc)
         return parse_reduced_items(response.text or "")
 
-    def _tag(self, client: Any, acc: _Accum, schema_md: str, vocab: str, text: str) -> list[str]:
+    def _tag(
+        self,
+        client: Any,
+        acc: _Accum,
+        schema_md: str,
+        vocab: str,
+        text: str,
+        note_path: str,
+    ) -> list[str]:
         """Tag one note from its own body (§7.5). Called per note after organize,
-        so a note is tagged for what it says, not for the whole source doc.
+        so a note is tagged for what it says, not for the whole source doc. The
+        note's own path is passed in so its tags stay anchored to its home topic
+        rather than drifting toward the last-touching ingest (#115).
         """
-        prompt = render_prompt(TAG, schema_md=schema_md, derived_vocabulary=vocab, input_text=text)
+        prompt = render_prompt(
+            TAG,
+            schema_md=schema_md,
+            derived_vocabulary=vocab,
+            note_path=note_path,
+            input_text=text,
+        )
         messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         for attempt in range(1, _TAG_ATTEMPTS + 1):
             response = self._complete(client, TAG, messages, acc)
@@ -374,7 +390,9 @@ class IngestPipeline:
                     self._stage(
                         acc,
                         "llm",
-                        lambda body=note.body: self._tag(client, acc, schema.raw, vocab, body),
+                        lambda body=note.body, path=note.path: self._tag(
+                            client, acc, schema.raw, vocab, body, path
+                        ),
                     ),
                     sha,
                     today,
