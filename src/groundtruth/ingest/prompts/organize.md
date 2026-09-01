@@ -31,6 +31,14 @@ covering a company, its products, and its contract terms becomes a small number 
 sentence and not one note per fact. When an item belongs in a note that already exists,
 update that note rather than creating a near-duplicate.
 
+**Do not both write an overview note and split its sections into their own notes.** Pick
+one shape. If the material fits in one note, write one note. Only split off a section into
+its own note when that section is substantial enough to stand alone.
+
+**Every note must carry substance.** Do not create a note whose body is only a pointer —
+"see `docs/x.md`", "details in [[y]]", "this covers …" with nothing after it. If all you
+have for a heading is a reference, fold it into a related note as a line, or leave it out.
+
 Link related notes to each other with `[[wikilinks]]` in the body, respecting the
 link rule under "Every note path in the vault" above — a dangling link fails the
 whole ingest. If the note you would link to does not exist and you are not
