@@ -84,11 +84,11 @@ def _happy_responses() -> list[LLMResponse]:
     return [
         _text("none"),  # survey
         _text("- Acme Corp was founded in 1996.\n- Acme ships Widget Platform."),  # reduce
-        _text("company\nvendor"),  # tag
         _tool(
             "create_note", {"folder": "companies", "title": "Acme Corp", "body": "Founded 1996."}
         ),
         _text("done"),  # organize finishes
+        _text("company\nvendor"),  # tag — per note, after organize
     ]
 
 
@@ -196,7 +196,7 @@ class TestFailurePaths:
         pipeline, vault, _ = env
         head_before = _git(vault.repo_root, "rev-parse", "HEAD")
         responses = _happy_responses()
-        responses[3] = _tool("create_note", {"folder": "undeclared", "title": "X", "body": "hi"})
+        responses[2] = _tool("create_note", {"folder": "undeclared", "title": "X", "body": "hi"})
         job = _run(pipeline, vault, ScriptedClient(responses), _config(organize_max_attempts=1))
 
         assert job.state is JobState.FAILED
@@ -324,9 +324,10 @@ class TestOrganizeRetry:
         responses = [
             _text("none"),  # survey
             _text("- Acme Corp was founded in 1996."),  # reduce
-            _text("company"),  # tag
             *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 1 — dangling
+            _text("company"),  # tag attempt-1's note
             *_organize_turn("Founded 1996."),  # attempt 2 — clean
+            _text("company"),  # tag attempt-2's note
         ]
         client = RecordingClient(responses)
         job = _run(pipeline, vault, client, _config())
@@ -346,9 +347,10 @@ class TestOrganizeRetry:
         responses = [
             _text("none"),
             _text("- Acme Corp was founded in 1996."),
-            _text("company"),
             *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 1
+            _text("company"),  # tag
             *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 2 — same
+            _text("company"),  # tag
         ]
         job = _run(pipeline, vault, ScriptedClient(responses), _config())
 
@@ -366,15 +368,15 @@ class TestOrganizeRetry:
         responses = [
             _text("none"),
             _text("- Acme Corp was founded in 1996."),
-            _text("company"),
             *_organize_turn("Founded 1996. See [[people/Nobody]]."),
+            _text("company"),  # tag
         ]
         client = ScriptedClient(responses)
         job = _run(pipeline, vault, client, _config(organize_max_attempts=1))
 
         assert job.state is JobState.FAILED
         assert job.failure_stage == "write-validation"
-        assert client.calls == 5  # survey, reduce, tag, one organize turn (tool + done) — no retry
+        assert client.calls == 5  # survey, reduce, organize turn (tool + done), tag — no retry
 
     def test_organize_no_writes_is_retried_then_succeeds(
         self, env: tuple[IngestPipeline, Vault, Path]
@@ -383,9 +385,9 @@ class TestOrganizeRetry:
         responses = [
             _text("none"),
             _text("- Acme Corp was founded in 1996."),
-            _text("company"),
             _text("I don't think anything needs writing."),  # organize attempt 1 — no tool call
             *_organize_turn("Founded 1996."),  # attempt 2 — writes
+            _text("company"),  # tag attempt-2's note
         ]
         client = RecordingClient(responses)
         job = _run(pipeline, vault, client, _config())
@@ -402,7 +404,6 @@ class TestOrganizeRetry:
         responses = [
             _text("none"),
             _text("- f"),
-            _text("company"),
             _text("nothing to do"),  # attempt 1
             _text("still nothing"),  # attempt 2
         ]
@@ -422,9 +423,9 @@ class TestTagRetry:
         responses = [
             _text("none"),
             _text("- Acme Corp was founded in 1996."),
+            *_organize_turn("Founded 1996."),
             _text("kubernetes (implied but not explicit — let's stick to explicit tech)"),  # bad
             _text("company"),  # retry — clean
-            *_organize_turn("Founded 1996."),
         ]
         client = RecordingClient(responses)
         job = _run(pipeline, vault, client, _config())
@@ -440,11 +441,35 @@ class TestTagRetry:
         responses = [
             _text("none"),
             _text("- f"),
-            _text("Tag: kubernetes (maybe?)"),  # attempt 1
-            _text("still: not a tag list"),  # attempt 2
+            *_organize_turn("Founded 1996."),  # a note to tag
+            _text("Tag: kubernetes (maybe?)"),  # tag attempt 1 — bad
+            _text("still: not a tag list"),  # tag attempt 2 — bad
         ]
         job = _run(pipeline, vault, ScriptedClient(responses), _config())
 
         assert job.state is JobState.FAILED
         assert job.failure_stage == "llm"
         assert GitRepo(vault.repo_root).is_clean()
+
+
+class TestPerNoteTagging:
+    def test_each_note_is_tagged_from_its_own_body(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = [
+            _text("none"),  # survey
+            _text("- Acme was founded in 1996.\n- Bob is the CEO."),  # reduce
+            _tool("create_note", {"folder": "companies", "title": "Acme", "body": "Founded 1996."}),
+            _tool("create_note", {"folder": "people", "title": "Bob", "body": "CEO of Acme."}),
+            _text("done"),
+            _text("company\nvendor"),  # tag for Acme
+            _text("person"),  # tag for Bob — different note, different tags
+        ]
+        job = _run(pipeline, vault, ScriptedClient(responses), _config())
+
+        assert job.state is JobState.SUCCEEDED
+        acme = (vault.vault_dir / "companies" / "Acme.md").read_text()
+        bob = (vault.vault_dir / "people" / "Bob.md").read_text()
+        assert "tags: [company, vendor]" in acme
+        assert "tags: [person]" in bob
