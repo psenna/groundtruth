@@ -344,12 +344,19 @@ class IngestPipeline:
         attempts = max(1, config.limits.organize_max_attempts)
         conversation: str | list[dict[str, Any]] = base_prompt
 
+        # One budget for the whole organize step, shared across every retry
+        # attempt (#112). A retry is the model correcting its own output, not a
+        # fresh allowance — max_tool_calls / max_wall_clock_s bound the step, not
+        # each attempt. A fresh WriteTools / PendingWrites is still made per
+        # attempt (ADR-5): only the meter carries over.
+        budget = Budget(BudgetLimits.from_limits(config.limits))
+
         for attempt in range(1, attempts + 1):
             drafted: tuple[PendingWrites, list[dict[str, Any]]] = self._stage(
                 acc,
                 "llm",
                 lambda convo=conversation: self._run_organize_agent(
-                    client, config, vault, existing, convo, acc
+                    client, budget, vault, existing, convo, acc
                 ),
             )
             pending, messages = drafted
@@ -411,13 +418,12 @@ class IngestPipeline:
     def _run_organize_agent(
         self,
         client: Any,
-        config: VaultConfig,
+        budget: Budget,
         vault: Vault,
         existing: set[str],
         conversation: str | list[dict[str, Any]],
         acc: _Accum,
     ) -> tuple[PendingWrites, list[dict[str, Any]]]:
-        budget = Budget(BudgetLimits.from_limits(config.limits))
         tools = WriteTools(
             vault.vault_dir,
             existing_paths=existing,
