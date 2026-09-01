@@ -67,6 +67,12 @@ and do not annotate it; git history preserves the previous value.
 sub-folder (if the schema declares `projects/x/`, do not write into `projects/x/ci/`).
 Put the note in the closest folder that *is* declared.
 
+**Titles — do not repeat what the folder already says.** The note's path is
+`folder/title.md`, so a title that restates its folder reads twice
+(`projects/git-proxy/git-proxy configuration.md`). A note in `projects/git-proxy/` is
+titled `Configuration`, `Deployment`, or `Internals` — not `git-proxy Configuration`.
+Title each note for what distinguishes it inside its folder.
+
 **Stay on the input's subject.** Write notes for what the distilled items are about.
 Do not create a note about a different project or topic just because the text mentions
 it in passing.
