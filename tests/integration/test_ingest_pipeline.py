@@ -233,6 +233,27 @@ class TestFailurePaths:
         assert GitRepo(vault.repo_root).is_clean()
         assert not (vault.vault_dir / "companies").exists()
 
+    def test_organize_budget_exhausted_fails_the_job(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        # a runaway organize agent: keeps calling create_note, never stops.
+        # WriteTools charges the budget, so max_tool_calls bounds it.
+        responses = [
+            _text("none"),
+            _text("- Acme Corp was founded in 1996."),
+            *[
+                _tool("create_note", {"folder": "companies", "title": f"N{i}", "body": "x"})
+                for i in range(6)
+            ],
+        ]
+        job = _run(pipeline, vault, ScriptedClient(responses), _config(max_tool_calls=3))
+
+        assert job.state is JobState.FAILED
+        assert job.failure_stage == "llm"
+        assert "budget exhausted" in (job.error or "")
+        assert GitRepo(vault.repo_root).is_clean()
+
 
 class TestHappyPath:
     def test_one_commit_with_notes_and_archive(
