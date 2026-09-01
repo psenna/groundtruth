@@ -436,6 +436,42 @@ class TestOrganizeRetry:
         assert "no writes" in (job.error or "")
         assert GitRepo(vault.repo_root).is_clean()
 
+    def test_retry_attempts_share_one_budget_and_exhaust_it(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        # #112: the organize budget is one meter for the whole step, not a fresh
+        # allowance per retry attempt. With max_tool_calls=2 the first two
+        # attempts each spend one create_note; the third finds the budget spent
+        # before it can call the model and the job fails loudly.
+        pipeline, vault, _ = env
+        head_before = _git(vault.repo_root, "rev-parse", "HEAD")
+        dangling = "Founded 1996. See [[people/Nobody]]."
+        responses = [
+            _text("none"),  # survey
+            _text("- Acme Corp was founded in 1996."),  # reduce
+            *_organize_turn(dangling),  # attempt 1 — spends tool call 1
+            _text("company"),  # tag
+            *_organize_turn(dangling),  # attempt 2 — spends tool call 2
+            _text("company"),  # tag
+            *_organize_turn(dangling),  # attempt 3 — never reached
+            _text("company"),
+        ]
+        client = ScriptedClient(responses)
+        job = _run(
+            pipeline,
+            vault,
+            client,
+            _config(max_tool_calls=2, organize_max_attempts=3),
+        )
+
+        assert job.state is JobState.FAILED
+        assert job.failure_stage == "llm"
+        assert "organize budget exhausted" in (job.error or "")
+        assert client.calls == 6  # 2 attempts x (tool + done + tag); attempt 3 never calls
+        assert _git(vault.repo_root, "rev-parse", "HEAD") == head_before
+        assert GitRepo(vault.repo_root).is_clean()
+        assert not (vault.vault_dir / "companies").exists()
+
 
 class TestTagRetry:
     def test_unparseable_tags_are_retried_with_the_error(
