@@ -36,6 +36,7 @@ class JobResponse(BaseModel):
     notes_updated: list[str] = []
     attempts: int = 1
     created_at: datetime | None = None
+    started_at: datetime | None = None
     updated_at: datetime | None = None
 
     @classmethod
@@ -52,6 +53,7 @@ class JobResponse(BaseModel):
             notes_updated=record.notes_updated,
             attempts=record.attempts,
             created_at=record.created_at,
+            started_at=record.started_at,
             updated_at=record.updated_at,
         )
 
