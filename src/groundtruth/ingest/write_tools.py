@@ -5,6 +5,13 @@ it supplies a folder and a title and the system derives the path. **Nothing is
 written here**: the tools buffer intentions into :class:`PendingWrites` for the
 validator (#18) to gate and the committer to apply, which is what makes
 all-or-nothing (§7.7) achievable.
+
+A ``create_note`` whose derived path already exists is buffered as an update
+instead. The model has already fully decided the content and the exact path; it
+only reached for the wrong tool. §7.5's "conflicts — the newer value wins" then
+applies mechanically, and nothing about the body is altered or guessed at — so
+this is routing, not ADR-5 sanitising. The validator's ``collision`` rule stays
+as the defensive gate.
 """
 
 from __future__ import annotations
@@ -16,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..models import NoteFrontmatter
+from ..observability import log_stage
 from ..storage.paths import UnsafePathError, resolve_in_vault, sanitize_title
 
 if TYPE_CHECKING:
@@ -130,11 +138,16 @@ class WriteTools:
         vault_root: Path | str,
         existing_paths: Collection[str],
         budget: Budget | None = None,
+        *,
+        job_id: str = "",
+        vault_name: str = "",
     ) -> None:
         self._root = Path(vault_root).resolve()
         self._existing = set(existing_paths)
         self.budget = budget
         self.pending = PendingWrites()
+        self._job_id = job_id
+        self._vault_name = vault_name
 
     def _rel(self, *parts: str) -> str:
         resolved = resolve_in_vault(self._root, *parts)
@@ -149,6 +162,22 @@ class WriteTools:
             return f"error: {exc}"
         if rel in set(self.pending.paths):
             return f"error: a note at {rel!r} was already staged in this job"
+        if rel in self._existing:
+            self.pending.notes.append(PendingNote(path=rel, body=body, is_new=False))
+            log_stage(
+                self._job_id,
+                self._vault_name,
+                "llm",
+                "coerce",
+                step="organize",
+                tool="create_note",
+                path=rel,
+                reason="path already exists; buffered as update_note",
+            )
+            return (
+                f"updated {rel} — a note already existed at that path, so your create "
+                f"was applied as an update to it (§7.5: the newer value wins)"
+            )
         self.pending.notes.append(
             PendingNote(path=rel, body=body, is_new=True, folder=folder, title=title)
         )
