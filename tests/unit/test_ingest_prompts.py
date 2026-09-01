@@ -38,6 +38,7 @@ class TestTemplates:
                 input_items="x",
                 existing_notes="none",
                 existing_note_paths="- projects/acme.md",
+                note_path="projects/acme.md",
             )
             assert SCHEMA_MD in rendered  # verbatim, prescriptive
             assert VOCAB in rendered  # descriptive, derived (§5.3)
@@ -59,6 +60,24 @@ class TestTemplates:
         assert "primary subject" in text
         assert "in passing" in text  # mentions are not tags
         assert "no prose" in text and "parenthes" in text
+
+    def test_tag_prompt_states_folder_affinity_and_covers_the_update_case(self) -> None:
+        text = load_template(TAG).lower()
+        assert "tag the note's home subject, not the latest edit" in text
+        assert "for an update, the tags belong" in text
+        assert "let the folder anchor the tags" in text
+        assert "{{note_path}}" in text  # the note's own path is injected
+
+    def test_tag_prompt_renders_the_notes_own_path(self) -> None:
+        rendered = render_prompt(
+            TAG,
+            schema_md="s",
+            derived_vocabulary="v",
+            note_path="companies/Acme Corp.md",
+            input_text="body",
+        )
+        assert "companies/Acme Corp.md" in rendered
+        assert "{{" not in rendered
 
     def test_organize_prompt_states_granularity_and_conflict_rules(self) -> None:
         text = load_template(ORGANIZE).lower()
