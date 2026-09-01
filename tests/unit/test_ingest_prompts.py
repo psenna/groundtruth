@@ -74,6 +74,10 @@ class TestTemplates:
         assert "sub-folder" in text
         assert "stay on the input's subject" in text
         assert "do **not** put a `---` frontmatter block" in text
+        # titles must not restate the folder
+        assert "do not repeat what the folder already says" in text
+        assert "projects/git-proxy/" in text
+        assert "titled `configuration`" in text
         # no overview-plus-stubs, no pointer-only notes
         assert "split its sections into their own notes" in text
         assert "every note must carry substance" in text
