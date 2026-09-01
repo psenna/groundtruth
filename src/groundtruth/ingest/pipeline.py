@@ -122,9 +122,6 @@ class IngestPipeline:
                 acc, "retrieval", lambda: self._survey(client, vault, config, text)
             )
             reduced = self._stage(acc, "llm", lambda: self._reduce(client, acc, schema.raw, text))
-            tags = self._stage(
-                acc, "llm", lambda: self._tag(client, acc, schema.raw, vocab.render(), reduced)
-            )
             pending: PendingWrites = self._organize_and_validate(
                 acc=acc,
                 client=client,
@@ -135,10 +132,10 @@ class IngestPipeline:
                 relevant=relevant,
                 reduced=reduced,
                 existing=existing,
-                tags=tags,
                 sha=sha,
                 today=today,
             )
+            tags = sorted({t for n in pending for t in _frontmatter(n).tags})
 
             created = [n.path for n in pending if n.is_new]
             updated = [n.path for n in pending if not n.is_new]
@@ -291,12 +288,11 @@ class IngestPipeline:
         response = self._complete(client, REDUCE, prompt, acc)
         return parse_reduced_items(response.text or "")
 
-    def _tag(
-        self, client: Any, acc: _Accum, schema_md: str, vocab: str, reduced: list[str]
-    ) -> list[str]:
-        prompt = render_prompt(
-            TAG, schema_md=schema_md, derived_vocabulary=vocab, input_text="\n".join(reduced)
-        )
+    def _tag(self, client: Any, acc: _Accum, schema_md: str, vocab: str, text: str) -> list[str]:
+        """Tag one note from its own body (§7.5). Called per note after organize,
+        so a note is tagged for what it says, not for the whole source doc.
+        """
+        prompt = render_prompt(TAG, schema_md=schema_md, derived_vocabulary=vocab, input_text=text)
         messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         for attempt in range(1, _TAG_ATTEMPTS + 1):
             response = self._complete(client, TAG, messages, acc)
@@ -325,12 +321,11 @@ class IngestPipeline:
         relevant: str,
         reduced: list[str],
         existing: set[str],
-        tags: list[str],
         sha: str,
         today: date,
     ) -> PendingWrites:
-        """Run organize, stamp frontmatter, validate — retrying on a validator
-        rejection with the rejection fed back to the model (spec §7.5).
+        """Run organize, tag each note, stamp frontmatter, validate — retrying on
+        a validator rejection with the rejection fed back to the model (§7.5).
 
         The retry is *not* sanitize-and-continue (ADR-5): the model redoes its
         own output, every attempt goes through the same validator, and once the
@@ -364,7 +359,19 @@ class IngestPipeline:
                 )
                 conversation = [*messages, {"role": "user", "content": _NO_WRITES_FEEDBACK}]
                 continue
-            pending.notes[:] = [_stamp(note, tags, sha, today) for note in pending]
+            pending.notes[:] = [
+                _stamp(
+                    note,
+                    self._stage(
+                        acc,
+                        "llm",
+                        lambda body=note.body: self._tag(client, acc, schema.raw, vocab, body),
+                    ),
+                    sha,
+                    today,
+                )
+                for note in pending
+            ]
             try:
                 self._stage(
                     acc,
@@ -450,6 +457,11 @@ def _stamp(note: PendingNote, tags: list[str], sha: str, today: date) -> Pending
             updated=today,
         )
     )
+
+
+def _frontmatter(note: PendingNote) -> NoteFrontmatter:
+    assert isinstance(note.frontmatter, NoteFrontmatter)  # stamped before this point
+    return note.frontmatter
 
 
 #: Rule-specific nudge appended to the generic retry feedback.

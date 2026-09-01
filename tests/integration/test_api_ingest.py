@@ -36,9 +36,8 @@ class ScriptedClient:
 
 def _happy() -> list[LLMResponse]:
     return [
-        LLMResponse(role="a", model="m", text="none"),
-        LLMResponse(role="a", model="m", text="- Acme founded 1996."),
-        LLMResponse(role="a", model="m", text="company\nvendor"),
+        LLMResponse(role="a", model="m", text="none"),  # survey
+        LLMResponse(role="a", model="m", text="- Acme founded 1996."),  # reduce
         LLMResponse(
             role="organize",
             model="m",
@@ -53,6 +52,7 @@ def _happy() -> list[LLMResponse]:
             usage=TokenUsage(1, 1, 2),
         ),
         LLMResponse(role="organize", model="m", text="done"),
+        LLMResponse(role="a", model="m", text="company\nvendor"),  # tag — per note
     ]
 
 
