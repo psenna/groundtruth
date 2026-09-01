@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -44,6 +44,7 @@ from ..storage.source_index import SourceIndex
 from .archive import set_commit_sha, write_archive
 from .commit_message import format_commit_message
 from .dedup import check_dedup, content_hash, mark_deduped
+from .links import check_links, downgrade_links, extract_links
 from .prompts import ORGANIZE, REDUCE, TAG, parse_reduced_items, parse_tags, render_prompt
 from .schema import Schema, load_schema
 from .validator import ValidationRejectionError, validate
@@ -72,6 +73,8 @@ class _Accum:
     vault: str = ""
     tokens: dict[str, TokenCounts] = field(default_factory=dict)
     timings: dict[str, float] = field(default_factory=dict)
+    #: §7.6 terminal link downgrades: note path -> stripped link targets.
+    link_downgrades: dict[str, list[str]] = field(default_factory=dict)
     current: str = "init"
 
     def add_usage(self, role: str, usage: Any) -> None:
@@ -213,6 +216,7 @@ class IngestPipeline:
                     "notes_updated": updated,
                     "token_usage": acc.tokens,
                     "stage_timings": acc.timings,
+                    "link_downgrades": acc.link_downgrades,
                     "error": push_error,
                 }
             )
@@ -419,39 +423,73 @@ class IngestPipeline:
                 )
                 for note in pending
             ]
-            try:
-                self._stage(
-                    acc,
-                    "write-validation",
-                    lambda staged=pending: validate(
-                        staged,
-                        schema,
-                        config.limits,
-                        vault_root=str(vault.vault_dir),
-                        existing_paths=existing,
-                    ),
+
+            def _run_validate(staged: PendingWrites = pending) -> None:
+                validate(
+                    staged,
+                    schema,
+                    config.limits,
+                    vault_root=str(vault.vault_dir),
+                    existing_paths=existing,
                 )
+
+            try:
+                self._stage(acc, "write-validation", _run_validate)
             except ValidationRejectionError as rejection:
-                if attempt == attempts:
+                if attempt < attempts:
+                    log_stage(
+                        acc.job_id,
+                        acc.vault,
+                        "write-validation",
+                        "retry",
+                        attempt=attempt,
+                        remaining=attempts - attempt,
+                        rule=rejection.rule,
+                        note=rejection.note_path,
+                    )
+                    conversation = [
+                        *messages,
+                        {"role": "user", "content": _retry_feedback(rejection, schema)},
+                    ]
+                    continue
+                # Final attempt. §7.6's one exception: if the sole failure is a
+                # dangling wikilink, strip the [[ ]] markup from the offending
+                # note and re-validate the whole batch. Anything else — including
+                # a link failure on another note, or a different rule after the
+                # rewrite — still fails the job loudly.
+                if rejection.rule != "link_integrity":
                     raise
+                self._downgrade_dangling_links(acc, pending, rejection.note_path, existing)
+                self._stage(acc, "write-validation", _run_validate)
+            return pending
+
+        raise AssertionError("unreachable: the loop returns or re-raises")
+
+    def _downgrade_dangling_links(
+        self, acc: _Accum, pending: PendingWrites, note_path: str, existing: set[str]
+    ) -> None:
+        """§7.6 last resort: strip the ``[[ ]]`` markup from every unresolved link
+        in ``note_path``'s body, leaving the alias/target as plain text. Records
+        the downgrade on the accumulator and the stage log — never silent.
+        """
+        created = set(pending.paths)
+        for i, note in enumerate(pending.notes):
+            if note.path != note_path:
+                continue
+            dangling = {d.target for d in check_links(extract_links(note.body), existing, created)}
+            new_body, stripped = downgrade_links(note.body, dangling)
+            pending.notes[i] = replace(note, body=new_body)
+            if stripped:
+                acc.link_downgrades[note_path] = stripped
                 log_stage(
                     acc.job_id,
                     acc.vault,
                     "write-validation",
-                    "retry",
-                    attempt=attempt,
-                    remaining=attempts - attempt,
-                    rule=rejection.rule,
-                    note=rejection.note_path,
+                    "link-downgrade",
+                    note=note_path,
+                    links=stripped,
                 )
-                conversation = [
-                    *messages,
-                    {"role": "user", "content": _retry_feedback(rejection, schema)},
-                ]
-                continue
-            return pending
-
-        raise AssertionError("unreachable: the loop returns or re-raises")
+            return
 
     def _run_organize_agent(
         self,

@@ -389,6 +389,7 @@ class TestOrganizeRetry:
 
         assert job.state is JobState.SUCCEEDED
         assert job.notes_created == ["companies/Acme Corp.md"]
+        assert job.link_downgrades == {}  # the retry fixed it; no downgrade needed
 
         fed_back = " ".join(str(m.get("content") or "") for msgs in client.seen for m in msgs)
         assert "link_integrity" in fed_back  # the rule
@@ -397,24 +398,30 @@ class TestOrganizeRetry:
     def test_retry_exhausted_fails_loudly_and_rolls_back(
         self, env: tuple[IngestPipeline, Vault, Path]
     ) -> None:
+        # An undeclared folder is not the one downgradeable failure (§7.6), so
+        # exhausting the retries on it still fails the job loudly.
         pipeline, vault, _ = env
         head_before = _git(vault.repo_root, "rev-parse", "HEAD")
+        turn = [
+            _tool("create_note", {"folder": "undeclared", "title": "X", "body": "Founded 1996."}),
+            _text("done"),
+        ]
         responses = [
             _text("none"),
             _text("- Acme Corp was founded in 1996."),
-            *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 1
+            *turn,  # attempt 1
             _text("company"),  # tag
-            *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 2 — same
+            *turn,  # attempt 2 — same
             _text("company"),  # tag
         ]
         job = _run(pipeline, vault, ScriptedClient(responses), _config())
 
         assert job.state is JobState.FAILED
         assert job.failure_stage == "write-validation"
-        assert "link_integrity" in (job.error or "")
+        assert "folder" in (job.error or "")
         assert _git(vault.repo_root, "rev-parse", "HEAD") == head_before
         assert GitRepo(vault.repo_root).is_clean()
-        assert not (vault.vault_dir / "companies").exists()
+        assert not (vault.vault_dir / "undeclared").exists()
 
     def test_max_attempts_one_disables_the_retry(
         self, env: tuple[IngestPipeline, Vault, Path]
@@ -423,7 +430,8 @@ class TestOrganizeRetry:
         responses = [
             _text("none"),
             _text("- Acme Corp was founded in 1996."),
-            *_organize_turn("Founded 1996. See [[people/Nobody]]."),
+            _tool("create_note", {"folder": "undeclared", "title": "X", "body": "Founded 1996."}),
+            _text("done"),
             _text("company"),  # tag
         ]
         client = ScriptedClient(responses)
@@ -504,6 +512,89 @@ class TestOrganizeRetry:
         assert _git(vault.repo_root, "rev-parse", "HEAD") == head_before
         assert GitRepo(vault.repo_root).is_clean()
         assert not (vault.vault_dir / "companies").exists()
+
+
+class TestTerminalLinkDowngrade:
+    """§7.6 (#118): on the final organize attempt, a lone dangling wikilink is
+    downgraded to plain text instead of failing the job."""
+
+    def _responses(self, body: str) -> list[LLMResponse]:
+        return [
+            _text("none"),  # survey
+            _text("- Acme Corp was founded in 1996."),  # reduce
+            _tool("create_note", {"folder": "companies", "title": "Acme Corp", "body": body}),
+            _text("done"),
+            _text("company"),  # tag
+        ]
+
+    def test_lone_dangling_link_on_final_attempt_is_downgraded_and_job_succeeds(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = self._responses("Founded 1996. See [[people/Nobody]] for more.")
+        job = _run(pipeline, vault, ScriptedClient(responses), _config(organize_max_attempts=1))
+
+        assert job.state is JobState.SUCCEEDED
+        assert job.notes_created == ["companies/Acme Corp.md"]
+        assert job.link_downgrades == {"companies/Acme Corp.md": ["people/Nobody"]}
+        note = (vault.vault_dir / "companies" / "Acme Corp.md").read_text()
+        assert "See people/Nobody for more." in note
+        assert "[[" not in note
+
+    def test_downgrade_keeps_the_alias_text_when_the_link_had_one(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = self._responses("Founded 1996 by [[people/Nobody|its founder]].")
+        job = _run(pipeline, vault, ScriptedClient(responses), _config(organize_max_attempts=1))
+
+        assert job.state is JobState.SUCCEEDED
+        note = (vault.vault_dir / "companies" / "Acme Corp.md").read_text()
+        assert "Founded 1996 by its founder." in note
+
+    def test_link_failure_plus_another_rule_on_the_final_attempt_still_fails_loudly(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        head_before = _git(vault.repo_root, "rev-parse", "HEAD")
+        responses = [
+            _text("none"),
+            _text("- Acme Corp was founded in 1996."),
+            _tool(
+                "create_note",
+                {"folder": "undeclared", "title": "X", "body": "See [[people/Nobody]]."},
+            ),
+            _text("done"),
+            _text("company"),  # tag
+        ]
+        job = _run(pipeline, vault, ScriptedClient(responses), _config(organize_max_attempts=1))
+
+        assert job.state is JobState.FAILED
+        assert job.failure_stage == "write-validation"
+        assert job.link_downgrades == {}
+        assert _git(vault.repo_root, "rev-parse", "HEAD") == head_before
+        assert GitRepo(vault.repo_root).is_clean()
+
+    def test_dangling_link_on_a_non_final_attempt_still_takes_the_retry_path(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        responses = [
+            _text("none"),
+            _text("- Acme Corp was founded in 1996."),
+            *_organize_turn("Founded 1996. See [[people/Nobody]]."),  # attempt 1 — dangling
+            _text("company"),  # tag
+            *_organize_turn("Founded 1996."),  # attempt 2 — clean
+            _text("company"),  # tag
+        ]
+        client = RecordingClient(responses)
+        job = _run(pipeline, vault, client, _config(organize_max_attempts=2))
+
+        assert job.state is JobState.SUCCEEDED
+        assert job.link_downgrades == {}  # attempt 1 retried, not downgraded
+        assert client.calls == 8  # both attempts fully ran
+        note = (vault.vault_dir / "companies" / "Acme Corp.md").read_text()
+        assert "[[people/Nobody]]" not in note  # the retry produced clean output
 
 
 class TestTagRetry:
