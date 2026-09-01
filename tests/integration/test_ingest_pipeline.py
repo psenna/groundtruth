@@ -234,6 +234,18 @@ class TestFailurePaths:
         assert GitRepo(vault.repo_root).is_clean()
         assert not (vault.vault_dir / "companies").exists()
 
+    def test_survey_tokens_are_recorded_even_when_retrieval_exhausts(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        client = ScriptedClient([_tool("grep", {"pattern": "acme"})] * 3)
+        job = _run(pipeline, vault, client, _config(max_tool_calls=1))
+
+        assert job.state is JobState.FAILED
+        assert job.failure_stage == "retrieval"
+        # the one survey model call was still metered before the job failed
+        assert job.token_usage["survey"].total_tokens == 5
+
     def test_organize_budget_exhausted_fails_the_job(
         self, env: tuple[IngestPipeline, Vault, Path]
     ) -> None:
@@ -283,6 +295,27 @@ class TestHappyPath:
         rec = SourceIndex(state).get(vault.name, sha)
         assert rec is not None and rec.commit_sha == job.commit_sha
         assert GitRepo(vault.repo_root).is_clean()
+
+    def test_token_usage_is_tracked_per_stage_including_survey_and_organize(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        from groundtruth.models import TokenCounts
+
+        pipeline, vault, _ = env
+        job = _run(pipeline, vault, ScriptedClient(_happy_responses()), _config())
+
+        assert job.state is JobState.SUCCEEDED
+        # every _text/_tool response carries TokenUsage(3, 2, 5)
+        assert set(job.token_usage) == {"survey", "reduce", "organize", "tag"}
+        assert job.token_usage["survey"] == TokenCounts(
+            prompt_tokens=3, completion_tokens=2, total_tokens=5
+        )
+        # organize made two model calls (create_note, then "done")
+        assert job.token_usage["organize"] == TokenCounts(
+            prompt_tokens=6, completion_tokens=4, total_tokens=10
+        )
+        assert job.token_usage["reduce"].total_tokens == 5
+        assert job.token_usage["tag"].total_tokens == 5
 
     def test_commit_message_is_7_9_format(self, env: tuple[IngestPipeline, Vault, Path]) -> None:
         pipeline, vault, _ = env

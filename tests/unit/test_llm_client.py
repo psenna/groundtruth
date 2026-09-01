@@ -200,6 +200,20 @@ class TestParsing:
         assert result.usage.total_tokens == 18
 
 
+class TestTokenUsageArithmetic:
+    def test_add_is_field_wise(self) -> None:
+        from groundtruth.llm.client import TokenUsage
+
+        total = TokenUsage(1, 2, 3) + TokenUsage(10, 20, 30)
+        assert total == TokenUsage(11, 22, 33)
+
+    def test_zero_usage_is_public_and_the_identity(self) -> None:
+        from groundtruth.llm.client import ZERO_USAGE, TokenUsage
+
+        assert TokenUsage(0, 0, 0) == ZERO_USAGE
+        assert TokenUsage(5, 6, 11) + ZERO_USAGE == TokenUsage(5, 6, 11)
+
+
 class TestReasoningEffort:
     @staticmethod
     def _payload_for(models: dict[str, ModelConfig], role: str) -> dict:

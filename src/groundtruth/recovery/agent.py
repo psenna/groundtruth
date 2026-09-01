@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from ..config import Limits
 from ..ingest.schema import load_schema
-from ..models import Vault
+from ..models import TokenCounts, Vault
+from ..observability import log_stage
 from ..retrieval.agent import AgentOutcome, LLMLike, run_agent
 from ..retrieval.budget import Budget, BudgetLimits
 from ..retrieval.tools import ReadOnlyTools
@@ -55,7 +56,16 @@ def recover(
     budget = Budget(BudgetLimits.from_limits(limits) if limits is not None else BudgetLimits())
     tools = ReadOnlyTools(vault.vault_dir, budget)
     prompt = _RECOVERY_PROMPT.format(schema_md=schema.raw, question=question)
-    return run_agent(client, "answer", prompt, tools, budget)
+    outcome = run_agent(client, "answer", prompt, tools, budget)
+    # A cost-accounting log line, not a vault write — invariant 1 holds (§8.1).
+    log_stage(
+        "",
+        vault.name,
+        "query",
+        outcome.status.value,
+        tokens={"answer": TokenCounts.from_usage(outcome.usage).model_dump()},
+    )
+    return outcome
 
 
 __all__ = ["recover"]

@@ -55,18 +55,18 @@ def check_grounding(answer: AnswerResult, vault: Vault) -> AnswerResult | Refusa
     """
     links = extract_links(answer.text)
     if not links:
-        return Refusal(reason="no_evidence")
+        return Refusal(reason="no_evidence", token_usage=answer.token_usage)
 
     citations = [_to_citation(link, vault.name) for link in links]
 
     # Every citation is validated against its OWN vault, not an ambient one.
     if any(citation.vault != vault.name for citation in citations):
-        return Refusal(reason="no_evidence")
+        return Refusal(reason="no_evidence", token_usage=answer.token_usage)
 
     existing = _existing_paths(vault)
     same_vault_links = [Link(target=citation.path) for citation in citations]
     if check_links(same_vault_links, existing, set()):
-        return Refusal(reason="no_evidence")
+        return Refusal(reason="no_evidence", token_usage=answer.token_usage)
 
     return answer.model_copy(update={"citations": _dedupe(citations)})
 

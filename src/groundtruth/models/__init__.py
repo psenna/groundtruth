@@ -7,6 +7,7 @@ from .job import (
 )
 from .note import Note, NoteFrontmatter
 from .source import SourceRecord
+from .usage import TokenCounts
 from .vault import Vault
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "Refusal",
     "RefusalReason",
     "SourceRecord",
+    "TokenCounts",
     "Vault",
 ]

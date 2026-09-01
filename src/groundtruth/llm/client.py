@@ -40,8 +40,16 @@ class TokenUsage:
     completion_tokens: int
     total_tokens: int
 
+    def __add__(self, other: TokenUsage) -> TokenUsage:
+        return TokenUsage(
+            self.prompt_tokens + other.prompt_tokens,
+            self.completion_tokens + other.completion_tokens,
+            self.total_tokens + other.total_tokens,
+        )
 
-_ZERO_USAGE = TokenUsage(0, 0, 0)
+
+#: The zero element for :class:`TokenUsage` — the default before any call is made.
+ZERO_USAGE = TokenUsage(0, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -57,7 +65,7 @@ class LLMResponse:
     model: str
     text: str | None
     tool_calls: list[ToolCall] = field(default_factory=list)
-    usage: TokenUsage = _ZERO_USAGE
+    usage: TokenUsage = ZERO_USAGE
 
 
 class LLMClient:
@@ -176,4 +184,4 @@ class LLMClient:
         )
 
 
-__all__ = ["LLMClient", "LLMResponse", "TokenUsage", "ToolCall"]
+__all__ = ["ZERO_USAGE", "LLMClient", "LLMResponse", "TokenUsage", "ToolCall"]

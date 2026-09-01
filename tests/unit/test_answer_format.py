@@ -50,7 +50,7 @@ class TestRefusalTypes:
         a = Refusal(reason="no_evidence")
         b = Refusal(reason="budget_exhausted")
         assert type(a) is type(b)
-        assert Refusal.model_fields.keys() == {"kind", "reason"}
+        assert Refusal.model_fields.keys() == {"kind", "reason", "token_usage"}
         assert a.model_dump().keys() == b.model_dump().keys()
         assert {k: v for k, v in a.model_dump().items() if k != "reason"} == {
             k: v for k, v in b.model_dump().items() if k != "reason"
@@ -85,3 +85,24 @@ class TestNoPartialAnswer:
             {"vault": "work", "path": "companies/Acme"},
             {"vault": "work", "path": "companies/Globex"},
         ]
+
+
+class TestTokenUsageInPayload:
+    def test_answer_payload_carries_token_usage(self) -> None:
+        from groundtruth.models import TokenCounts
+
+        answer = _answer().model_copy(
+            update={"token_usage": {"answer": TokenCounts(prompt_tokens=7, total_tokens=7)}}
+        )
+        payload = to_payload(answer)
+        assert payload["token_usage"] == {
+            "answer": {"prompt_tokens": 7, "completion_tokens": 0, "total_tokens": 7}
+        }
+
+    def test_refusal_payload_carries_token_usage(self) -> None:
+        from groundtruth.models import TokenCounts
+
+        counts = TokenCounts(prompt_tokens=3, completion_tokens=2, total_tokens=5)
+        refusal = Refusal(reason="no_evidence", token_usage={"answer": counts})
+        payload = to_payload(refusal)
+        assert payload["token_usage"]["answer"]["total_tokens"] == 5

@@ -97,6 +97,13 @@ class TestIngest:
         assert body["state"] == "succeeded"
         assert body["notes_created"] == ["companies/Acme.md"]
         assert body["commit_sha"]
+        # token_usage is now dict[str, {prompt,completion,total}] keyed by stage
+        assert set(body["token_usage"]) == {"survey", "reduce", "organize", "tag"}
+        assert body["token_usage"]["organize"] == {
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+            "total_tokens": 2,
+        }
 
     def test_wait_true_on_failure_returns_the_failure(self, tmp_path: Path) -> None:
         repo = tmp_path / "repo"

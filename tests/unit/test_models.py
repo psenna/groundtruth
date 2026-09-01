@@ -14,6 +14,7 @@ from groundtruth.models import (
     NoteFrontmatter,
     Refusal,
     SourceRecord,
+    TokenCounts,
     Vault,
 )
 
@@ -150,6 +151,47 @@ class TestJobRecord:
         job = JobRecord(id="01J8X", vault="work", state=frm)
         with pytest.raises(ValueError):
             job.transitioned_to(to)
+
+
+class TestTokenCounts:
+    def test_defaults_to_all_zero(self) -> None:
+        tc = TokenCounts()
+        assert (tc.prompt_tokens, tc.completion_tokens, tc.total_tokens) == (0, 0, 0)
+
+    def test_add_is_field_wise(self) -> None:
+        a = TokenCounts(prompt_tokens=1, completion_tokens=2, total_tokens=3)
+        b = TokenCounts(prompt_tokens=10, completion_tokens=20, total_tokens=30)
+        assert a + b == TokenCounts(prompt_tokens=11, completion_tokens=22, total_tokens=33)
+
+    def test_from_usage_reads_the_three_fields(self) -> None:
+        from groundtruth.llm.client import TokenUsage
+
+        tc = TokenCounts.from_usage(TokenUsage(3, 2, 5))
+        assert tc == TokenCounts(prompt_tokens=3, completion_tokens=2, total_tokens=5)
+
+    def test_is_frozen_and_forbids_extra(self) -> None:
+        with pytest.raises(ValidationError):
+            TokenCounts(prompt_tokens=1, unexpected=2)  # type: ignore[call-arg]
+        with pytest.raises(ValidationError):
+            TokenCounts().prompt_tokens = 9  # type: ignore[misc]
+
+    def test_job_record_widens_a_legacy_bare_int(self) -> None:
+        # Records persisted before #116 stored dict[str, int]; they must still load.
+        job = JobRecord.model_validate(
+            {"id": "j", "vault": "work", "token_usage": {"reduce": 42, "tag": 7}}
+        )
+        assert job.token_usage["reduce"] == TokenCounts(total_tokens=42)
+        assert job.token_usage["tag"].total_tokens == 7
+
+    def test_job_record_keeps_a_dict_value_untouched(self) -> None:
+        job = JobRecord.model_validate(
+            {
+                "id": "j",
+                "vault": "work",
+                "token_usage": {"answer": {"prompt_tokens": 1, "completion_tokens": 2}},
+            }
+        )
+        assert job.token_usage["answer"] == TokenCounts(prompt_tokens=1, completion_tokens=2)
 
 
 class TestCitation:

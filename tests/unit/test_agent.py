@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from groundtruth.llm.client import LLMResponse, TokenUsage, ToolCall
+from groundtruth.llm.client import ZERO_USAGE, LLMResponse, TokenUsage, ToolCall
 from groundtruth.retrieval.agent import AgentStatus, run_agent
 from groundtruth.retrieval.budget import Budget, BudgetLimits
 
@@ -161,6 +161,49 @@ def test_generic_over_tool_sets() -> None:
     )
     assert out_rw.status is AgentStatus.COMPLETED
     assert out_rw.transcript[0].result == "written"
+
+
+def test_usage_accumulates_across_turns() -> None:
+    budget = Budget(BudgetLimits(max_tool_calls=10))
+    tools = FakeTools(budget, {"ls": lambda: "a\nb"})
+    client = ScriptedClient([_call("ls", {}), _say("done: a, b")])
+
+    outcome = run_agent(client, "answer", "sys", tools, budget)
+
+    # two client.complete calls, each carrying TokenUsage(1, 1, 2)
+    assert outcome.usage == TokenUsage(2, 2, 4)
+
+
+def test_usage_defaults_to_zero_and_is_zero_when_exhausted_first() -> None:
+    from groundtruth.retrieval.agent import AgentOutcome
+
+    assert AgentOutcome(AgentStatus.COMPLETED).usage is ZERO_USAGE
+
+    budget = Budget(BudgetLimits(max_tool_calls=0))
+    tools = FakeTools(budget, {})
+    outcome = run_agent(ScriptedClient([]), "answer", "sys", tools, budget)
+    assert outcome.status is AgentStatus.EXHAUSTED
+    assert outcome.usage == ZERO_USAGE
+
+
+def test_usage_is_carried_on_a_failed_outcome() -> None:
+    from groundtruth.errors import MalformedLLMOutputError
+
+    class OneThenFail:
+        def __init__(self) -> None:
+            self.n = 0
+
+        def complete(self, *a: Any, **k: Any) -> LLMResponse:
+            self.n += 1
+            if self.n == 1:
+                return _call("ls", {})
+            raise MalformedLLMOutputError("bad json")
+
+    budget = Budget(BudgetLimits(max_tool_calls=10))
+    tools = FakeTools(budget, {"ls": lambda: "x"})
+    outcome = run_agent(OneThenFail(), "answer", "sys", tools, budget)
+    assert outcome.status is AgentStatus.FAILED
+    assert outcome.usage == TokenUsage(1, 1, 2)
 
 
 def test_llm_failure_is_a_failed_outcome() -> None:

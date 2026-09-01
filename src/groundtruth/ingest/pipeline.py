@@ -24,7 +24,15 @@ from typing import Any
 from ..config import VaultConfig
 from ..errors import GitConflictError, GroundtruthError, MalformedLLMOutputError, is_transient
 from ..llm.client import LLMResponse
-from ..models import JobRecord, JobState, Note, NoteFrontmatter, SourceRecord, Vault
+from ..models import (
+    JobRecord,
+    JobState,
+    Note,
+    NoteFrontmatter,
+    SourceRecord,
+    TokenCounts,
+    Vault,
+)
 from ..observability import log_stage
 from ..retrieval.agent import AgentStatus, run_agent
 from ..retrieval.budget import Budget, BudgetLimits
@@ -62,12 +70,16 @@ class _StageFailureError(Exception):
 class _Accum:
     job_id: str = ""
     vault: str = ""
-    tokens: dict[str, int] = field(default_factory=dict)
+    tokens: dict[str, TokenCounts] = field(default_factory=dict)
     timings: dict[str, float] = field(default_factory=dict)
     current: str = "init"
 
+    def add_usage(self, role: str, usage: Any) -> None:
+        """Merge one usage record into the running total for ``role``."""
+        self.tokens[role] = self.tokens.get(role, TokenCounts()) + TokenCounts.from_usage(usage)
+
     def add_tokens(self, role: str, response: LLMResponse) -> None:
-        self.tokens[role] = self.tokens.get(role, 0) + response.usage.total_tokens
+        self.add_usage(role, response.usage)
 
 
 class IngestPipeline:
@@ -121,7 +133,7 @@ class IngestPipeline:
             existing = {note.path for note in note_repo.list_notes()}
 
             relevant = self._stage(
-                acc, "retrieval", lambda: self._survey(client, vault, config, text)
+                acc, "retrieval", lambda: self._survey(client, acc, vault, config, text)
             )
             reduced = self._stage(acc, "llm", lambda: self._reduce(client, acc, schema.raw, text))
             pending: PendingWrites = self._organize_and_validate(
@@ -205,7 +217,12 @@ class IngestPipeline:
                 }
             )
             log_stage(
-                job_id, vault.name, "job", "succeeded", commit_sha=commit_sha, tokens=acc.tokens
+                job_id,
+                vault.name,
+                "job",
+                "succeeded",
+                commit_sha=commit_sha,
+                tokens=_tokens_log(acc),
             )
             return self._jobs.update(done.transitioned_to(JobState.SUCCEEDED))
 
@@ -238,7 +255,7 @@ class IngestPipeline:
                 "token_usage": acc.tokens,
             }
         )
-        log_stage(acc.job_id, acc.vault, stage, "failed", error=message)
+        log_stage(acc.job_id, acc.vault, stage, "failed", error=message, tokens=_tokens_log(acc))
         return self._jobs.update(failed.transitioned_to(JobState.FAILED))
 
     # --- stages ----------------------------------------------------------------
@@ -268,10 +285,13 @@ class IngestPipeline:
         except GitConflictError as exc:
             raise _StageFailureError("pre-sync", str(exc), rollback=False) from exc
 
-    def _survey(self, client: Any, vault: Vault, config: VaultConfig, text: str) -> str:
+    def _survey(
+        self, client: Any, acc: _Accum, vault: Vault, config: VaultConfig, text: str
+    ) -> str:
         budget = Budget(BudgetLimits.from_limits(config.limits))
         tools = ReadOnlyTools(vault.vault_dir, budget)
         outcome = run_agent(client, REDUCE, _SURVEY_INSTRUCTION + text, tools, budget)
+        acc.add_usage("survey", outcome.usage)
         if outcome.status is AgentStatus.EXHAUSTED:
             raise _StageFailureError(
                 "retrieval",
@@ -450,6 +470,7 @@ class IngestPipeline:
             vault_name=vault.name,
         )
         outcome = run_agent(client, ORGANIZE, conversation, tools, budget)
+        acc.add_usage("organize", outcome.usage)
         if outcome.status is AgentStatus.EXHAUSTED:
             raise _StageFailureError("llm", "organize budget exhausted", rollback=True)
         if outcome.status is AgentStatus.FAILED:
@@ -468,6 +489,11 @@ class IngestPipeline:
             raise _StageFailureError("llm", str(exc), rollback=True) from exc
         acc.add_tokens(role, response)
         return response
+
+
+def _tokens_log(acc: _Accum) -> dict[str, dict[str, int]]:
+    """Per-stage token counts as plain dicts for the structured stage log."""
+    return {stage: counts.model_dump() for stage, counts in acc.tokens.items()}
 
 
 def _stem(path: str) -> str:

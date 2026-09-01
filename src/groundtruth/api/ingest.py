@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from ..models import JobRecord, JobState
+from ..models import JobRecord, JobState, TokenCounts
 from ..redaction import redact
 from .services import Services
 
@@ -39,7 +39,7 @@ class JobResponse(BaseModel):
     source_sha: str | None = None
     source_bytes: int | None = None
     stage_timings: dict[str, float] = {}
-    token_usage: dict[str, int] = {}
+    token_usage: dict[str, TokenCounts] = {}
     created_at: datetime | None = None
     started_at: datetime | None = None
     updated_at: datetime | None = None
