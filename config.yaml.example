@@ -31,6 +31,9 @@ defaults:
       #   temperature: 0.2       # ingest is extraction + tool-calling — keep it low.
       #   presence_penalty: 0    # a high presence_penalty drops precise repeated terms.
       # (reasoning_effort + params are inherited by the roles below; params deep-merge.)
+    # `model:` is NOT inherited: the three roles below keep these built-in models
+    # unless you change them here. Only `organize` uses default's model.
+    # See docs/local-model-tuning.md.
     tag:    {model: qwen2.5:7b}
     reduce: {model: qwen2.5:14b}
     answer: {model: qwen2.5:32b}
