@@ -32,7 +32,9 @@
 {% if job.token_usage %}
 <h4>Tokens <span class="subtle">· {{ job.tokens_total }} total</span></h4>
 <table class="jd-mini">
-  {% for u in job.token_usage %}<tr><td>{{ u.role }}</td><td class="num">{{ u.tokens }}</td></tr>{% endfor %}
+  <tr><th>stage</th><th class="num">prompt</th><th class="num">completion</th><th class="num">total</th></tr>
+  {% for u in job.token_usage %}<tr><td>{{ u.role }}</td><td class="num">{{ u.prompt_tokens }}</td><td class="num">{{ u.completion_tokens }}</td><td class="num">{{ u.total_tokens }}</td></tr>{% endfor %}
+  <tr><td>total</td><td class="num"></td><td class="num"></td><td class="num">{{ job.tokens_total }}</td></tr>
 </table>
 {% endif %}
 

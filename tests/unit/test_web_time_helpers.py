@@ -82,6 +82,27 @@ class TestJobDetail:
         assert d["attempt_errors"] == ["first try boom"]
         assert d["created_at"] == "2026-01-01T12:00:00+00:00"
 
+    def test_token_usage_rows_have_prompt_completion_total(self) -> None:
+        from groundtruth.models import TokenCounts
+
+        rec = _rec(
+            state=JobState.SUCCEEDED,
+            created_at=_T0,
+            token_usage={
+                "reduce": TokenCounts(prompt_tokens=60, completion_tokens=40, total_tokens=100),
+                "tag": TokenCounts(prompt_tokens=12, completion_tokens=8, total_tokens=20),
+            },
+        )
+        d = _job_detail(rec, _T0)
+        by_role = {r["role"]: r for r in d["token_usage"]}
+        assert by_role["reduce"] == {
+            "role": "reduce",
+            "prompt_tokens": 60,
+            "completion_tokens": 40,
+            "total_tokens": 100,
+        }
+        assert d["tokens_total"] == 120
+
     def test_redacts_errors(self) -> None:
         rec = _rec(
             state=JobState.FAILED,

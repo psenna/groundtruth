@@ -49,6 +49,19 @@ class TestGrounding:
             ("work", "companies/Globex"),
         }
 
+    def test_refusal_propagates_the_incoming_answers_token_usage(self, vault: Vault) -> None:
+        from groundtruth.models import TokenCounts
+
+        usage = {"answer": TokenCounts(prompt_tokens=3, completion_tokens=2, total_tokens=5)}
+        answer = AnswerResult(
+            text="Acme was founded in 1996.",  # no citation -> refusal
+            citations=[],
+            token_usage=usage,
+        )
+        result = check_grounding(answer, vault)
+        assert isinstance(result, Refusal)
+        assert result.token_usage == usage
+
     def test_bare_note_name_resolves(self, vault: Vault) -> None:
         assert isinstance(check_grounding(_answer("x [[Acme]]"), vault), AnswerResult)
 

@@ -19,7 +19,7 @@ from ..ingest.schema import SchemaError, load_schema, write_schema
 from ..jobs.queue import JobQueue
 from ..jobs.retry import retrying_runner
 from ..llm.client import LLMClient
-from ..models import AnswerResult, JobRecord, JobState, Note, Refusal, Vault
+from ..models import AnswerResult, JobRecord, JobState, Note, Refusal, TokenCounts, Vault
 from ..observability import LLMCallLog, LoggingLLMClient
 from ..recovery.agent import recover
 from ..recovery.grounding import check_grounding
@@ -114,13 +114,14 @@ class Services:
             config.models, environ=self.environ, timeout=self.llm_timeout_s
         )
         outcome = recover(vault, question, client, limits=config.limits)
+        usage = {"answer": TokenCounts.from_usage(outcome.usage)}
 
         if outcome.status is AgentStatus.EXHAUSTED:
-            return Refusal(reason="budget_exhausted")
+            return Refusal(reason="budget_exhausted", token_usage=usage)
         if outcome.status is AgentStatus.FAILED:
             problem(503, "the recovery agent failed to run")
 
-        answer = AnswerResult(text=outcome.final_text or "", citations=[])
+        answer = AnswerResult(text=outcome.final_text or "", citations=[], token_usage=usage)
         # The grounding check runs on every query path; there is no way past it.
         return check_grounding(answer, vault)
 

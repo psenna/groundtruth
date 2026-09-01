@@ -90,6 +90,46 @@ class TestTimestampsAndListing:
         assert JobStore(tmp_path).list_recent() == []
 
 
+class TestTokenUsageRoundTrip:
+    def test_token_counts_survive_a_write_and_reload(self, tmp_path: Path) -> None:
+        from groundtruth.models import TokenCounts
+
+        store = JobStore(tmp_path)
+        store.create(_job())
+        job = _job(state=JobState.RUNNING).model_copy(
+            update={
+                "token_usage": {
+                    "survey": TokenCounts(prompt_tokens=3, completion_tokens=2, total_tokens=5),
+                    "organize": TokenCounts(prompt_tokens=10, completion_tokens=4, total_tokens=14),
+                }
+            }
+        )
+        store.update(job)
+
+        reloaded = JobStore(tmp_path).load("01J8X")
+        assert reloaded is not None
+        assert reloaded.token_usage["survey"] == TokenCounts(
+            prompt_tokens=3, completion_tokens=2, total_tokens=5
+        )
+        assert reloaded.token_usage["organize"].total_tokens == 14
+
+    def test_a_legacy_int_record_on_disk_still_loads(self, tmp_path: Path) -> None:
+        import json
+
+        from groundtruth.models import TokenCounts
+
+        store = JobStore(tmp_path)
+        store.create(_job())
+        path = tmp_path / "jobs" / "01J8X.json"
+        raw = json.loads(path.read_text())
+        raw["token_usage"] = {"reduce": 99}
+        path.write_text(json.dumps(raw))
+
+        reloaded = JobStore(tmp_path).load("01J8X")
+        assert reloaded is not None
+        assert reloaded.token_usage["reduce"] == TokenCounts(total_tokens=99)
+
+
 class TestTransitions:
     def test_legal_transition_accepted(self, tmp_path: Path) -> None:
         store = JobStore(tmp_path)

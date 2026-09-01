@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from .usage import TokenCounts
 
 
 class JobState(StrEnum):
@@ -45,8 +48,25 @@ class JobRecord(BaseModel):
 
     #: Per-stage wall-clock seconds (spec §12.4).
     stage_timings: dict[str, float] = Field(default_factory=dict)
-    #: Token usage keyed by LLM role (``tag``, ``reduce``, ``answer``).
-    token_usage: dict[str, int] = Field(default_factory=dict)
+    #: Token usage keyed by pipeline stage (``survey``, ``reduce``, ``organize``,
+    #: ``tag``). Records written before #116 stored a bare ``int`` per key; the
+    #: validator below widens those so old job files still load.
+    token_usage: dict[str, TokenCounts] = Field(default_factory=dict)
+
+    @field_validator("token_usage", mode="before")
+    @classmethod
+    def _widen_legacy_token_usage(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        widened: dict[Any, Any] = {}
+        for key, entry in value.items():
+            if isinstance(entry, bool):
+                widened[key] = entry
+            elif isinstance(entry, int):
+                widened[key] = {"total_tokens": entry}
+            else:
+                widened[key] = entry
+        return widened
 
     notes_created: list[str] = Field(default_factory=list)
     notes_updated: list[str] = Field(default_factory=list)

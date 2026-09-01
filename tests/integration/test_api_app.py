@@ -76,6 +76,7 @@ class TestRefusalIsSuccess:
             "outcome": "refused",
             "reason": "no_evidence",
             "message": "The vault does not contain information to answer this question.",
+            "token_usage": {},
         }
 
     def test_answer_is_200_same_shape_family(self, anon_client: TestClient) -> None:

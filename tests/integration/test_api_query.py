@@ -10,7 +10,7 @@ from groundtruth.api.app import create_app
 from groundtruth.api.query import build_query_router
 from groundtruth.api.services import Services
 from groundtruth.auth import build_strategy
-from groundtruth.llm.client import LLMResponse, ToolCall
+from groundtruth.llm.client import LLMResponse, TokenUsage, ToolCall
 from groundtruth.models import Vault
 from groundtruth.storage.job_store import JobStore
 from groundtruth.storage.registry import VaultRegistry
@@ -121,6 +121,63 @@ class TestQuery:
         assert body["outcome"] == "refused"
         assert body["reason"] == "budget_exhausted"
         assert body["message"].startswith("Could not establish ground truth")
+
+    def test_answer_payload_reports_token_usage(self, make_client) -> None:  # type: ignore[no-untyped-def]
+        client, _ = make_client(
+            [
+                LLMResponse(
+                    role="answer",
+                    model="m",
+                    text=None,
+                    tool_calls=[ToolCall(id="c", name="grep", arguments={"pattern": "founded"})],
+                    usage=TokenUsage(30, 10, 40),
+                ),
+                LLMResponse(
+                    role="answer",
+                    model="m",
+                    text="1996. [[companies/Acme]]",
+                    usage=TokenUsage(50, 12, 62),
+                ),
+            ]
+        )
+        body = client.post("/query", json={"vault": "work", "question": "When?"}).json()
+        assert body["outcome"] == "answer"
+        assert body["token_usage"] == {
+            "answer": {"prompt_tokens": 80, "completion_tokens": 22, "total_tokens": 102}
+        }
+
+    def test_budget_exhausted_refusal_reports_token_usage(self, tmp_path: Path) -> None:
+        vdir = tmp_path / "repo" / "work"
+        vdir.mkdir(parents=True)
+        (vdir / "schema.md").write_text("# Schema\n\n## Folders\n- x/\n")
+        state = tmp_path / "state"
+        reg = VaultRegistry(state)
+        reg.register("work", tmp_path / "repo")
+        (tmp_path / "repo" / ".groundtruth.yaml").write_text("limits:\n  max_tool_calls: 1\n")
+        services = Services(
+            state_dir=str(state),
+            registry=reg,
+            job_store=JobStore(state),
+            source_index=SourceIndex(state),
+            client_override=ScriptedClient(
+                [
+                    LLMResponse(
+                        role="answer",
+                        model="m",
+                        text=None,
+                        tool_calls=[ToolCall(id="c", name="grep", arguments={"pattern": "x"})],
+                        usage=TokenUsage(9, 1, 10),
+                    )
+                ]
+                * 3
+            ),
+        )
+        client = TestClient(
+            create_app(auth=build_strategy("none"), routers=[build_query_router(services)])
+        )
+        body = client.post("/query", json={"vault": "work", "question": "x"}).json()
+        assert body["outcome"] == "refused"
+        assert body["token_usage"]["answer"]["total_tokens"] == 10
 
     def test_query_never_modifies_the_vault(self, make_client) -> None:  # type: ignore[no-untyped-def]
         client, vault = make_client(

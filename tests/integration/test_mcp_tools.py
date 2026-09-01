@@ -124,6 +124,28 @@ class TestQueryAndIngest:
         assert payload["citations"] == [{"vault": "work", "path": "companies/Acme"}]
 
     @pytest.mark.anyio
+    async def test_query_payload_carries_token_usage(self, tmp_path: Path) -> None:
+        from groundtruth.llm.client import TokenUsage
+
+        services, _ = _services(
+            tmp_path,
+            responses=[
+                LLMResponse(
+                    role="answer",
+                    model="m",
+                    text="1996 [[companies/Acme]]",
+                    usage=TokenUsage(40, 10, 50),
+                )
+            ],
+        )
+        app, _ = mcp_asgi_app(services, build_strategy("none"))
+        result = await _call(app, "groundtruth_query", {"vault": "work", "question": "when?"})
+        payload = result.structuredContent or {}
+        assert payload["token_usage"] == {
+            "answer": {"prompt_tokens": 40, "completion_tokens": 10, "total_tokens": 50}
+        }
+
+    @pytest.mark.anyio
     async def test_query_refusal_same_shape_as_api(self, tmp_path: Path) -> None:
         services, _ = _services(
             tmp_path,

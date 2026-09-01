@@ -109,8 +109,16 @@ def _job_detail(rec: JobRecord, now: datetime) -> dict[str, Any]:
             "stage_timings": [
                 {"stage": s, "seconds": f"{v:.1f}"} for s, v in rec.stage_timings.items()
             ],
-            "token_usage": [{"role": r, "tokens": t} for r, t in rec.token_usage.items()],
-            "tokens_total": sum(rec.token_usage.values()),
+            "token_usage": [
+                {
+                    "role": r,
+                    "prompt_tokens": u.prompt_tokens,
+                    "completion_tokens": u.completion_tokens,
+                    "total_tokens": u.total_tokens,
+                }
+                for r, u in rec.token_usage.items()
+            ],
+            "tokens_total": sum(u.total_tokens for u in rec.token_usage.values()),
             "attempt_errors": [redact(e) for e in rec.attempt_errors],
             "created_at": _iso(rec.created_at),
             "started_at": _iso(rec.started_at),

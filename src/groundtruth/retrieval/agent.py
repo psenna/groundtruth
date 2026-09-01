@@ -17,7 +17,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from ..errors import GroundtruthError
-from ..llm.client import LLMResponse
+from ..llm.client import ZERO_USAGE, LLMResponse, TokenUsage
 from .budget import Budget
 
 
@@ -58,6 +58,8 @@ class AgentOutcome:
     transcript: list[ToolInvocation] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
+    #: Token usage summed over every ``client.complete`` call this run made.
+    usage: TokenUsage = ZERO_USAGE
 
 
 def _initial_messages(system: str | Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -94,23 +96,29 @@ def run_agent(
     """Run the agent loop until the model stops requesting tools or the budget is spent."""
     messages = _initial_messages(system)
     transcript: list[ToolInvocation] = []
+    usage = ZERO_USAGE
     # Safety net: the budget normally bounds this, but a tool set that never
     # charges must not spin forever.
     hard_cap = 2 * budget.limits.max_tool_calls + 10
 
     for _ in range(hard_cap):
         if budget.exhausted:
-            return AgentOutcome(AgentStatus.EXHAUSTED, None, transcript, messages)
+            return AgentOutcome(AgentStatus.EXHAUSTED, None, transcript, messages, usage=usage)
 
         try:
             response = client.complete(role, messages, tools=tools.schemas)
         except GroundtruthError as exc:
-            return AgentOutcome(AgentStatus.FAILED, None, transcript, messages, error=str(exc))
+            return AgentOutcome(
+                AgentStatus.FAILED, None, transcript, messages, error=str(exc), usage=usage
+            )
 
+        usage = usage + response.usage
         messages.append(_assistant_message(response))
 
         if not response.tool_calls:
-            return AgentOutcome(AgentStatus.COMPLETED, response.text, transcript, messages)
+            return AgentOutcome(
+                AgentStatus.COMPLETED, response.text, transcript, messages, usage=usage
+            )
 
         for call in response.tool_calls:
             try:
@@ -121,7 +129,12 @@ def run_agent(
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
 
     return AgentOutcome(
-        AgentStatus.FAILED, None, transcript, messages, error="agent loop did not converge"
+        AgentStatus.FAILED,
+        None,
+        transcript,
+        messages,
+        error="agent loop did not converge",
+        usage=usage,
     )
 
 

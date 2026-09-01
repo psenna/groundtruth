@@ -48,12 +48,19 @@ def render_refusal(refusal: Refusal) -> str:
 
 def to_payload(result: AnswerResult | Refusal) -> dict[str, Any]:
     """Structured shape for API and MCP responses (both outcomes are HTTP 200)."""
+    token_usage = {role: counts.model_dump() for role, counts in result.token_usage.items()}
     if isinstance(result, Refusal):
-        return {"outcome": "refused", "reason": result.reason, "message": render_refusal(result)}
+        return {
+            "outcome": "refused",
+            "reason": result.reason,
+            "message": render_refusal(result),
+            "token_usage": token_usage,
+        }
     return {
         "outcome": "answer",
         "text": render_answer(result),
         "citations": [{"vault": c.vault, "path": c.path} for c in result.citations],
+        "token_usage": token_usage,
     }
 
 

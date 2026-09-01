@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from .usage import TokenCounts
 
 RefusalReason = Literal["no_evidence", "budget_exhausted"]
 
@@ -29,6 +31,9 @@ class AnswerResult(BaseModel):
     kind: Literal["answer"] = "answer"
     text: str
     citations: list[Citation]
+    #: Token usage of the query that produced this answer, keyed by stage
+    #: (currently just ``answer``). Cost accounting only — never a finding.
+    token_usage: dict[str, TokenCounts] = Field(default_factory=dict)
 
 
 class Refusal(BaseModel):
@@ -41,6 +46,8 @@ class Refusal(BaseModel):
 
     kind: Literal["refusal"] = "refusal"
     reason: RefusalReason
+    #: Token usage of the query that led to this refusal (see ``AnswerResult``).
+    token_usage: dict[str, TokenCounts] = Field(default_factory=dict)
 
 
 #: The recovery pipeline returns exactly one of these.
