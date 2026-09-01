@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from groundtruth.ingest.links import Link, check_links, extract_links
+from groundtruth.ingest.links import Link, check_links, downgrade_links, extract_links
 
 EXISTING = {"companies/Acme Corp.md", "people/Bob.md"}
 
@@ -63,3 +63,38 @@ class TestCheckLinks:
     def test_unicode_note_names_resolve(self) -> None:
         existing = {"notes/Café Ω 日本語.md"}
         assert check_links(extract_links("[[Café Ω 日本語]]"), existing, set()) == []
+
+
+class TestDowngradeLinks:
+    def test_bare_link_becomes_its_target_text(self) -> None:
+        body, downgraded = downgrade_links("See [[people/Nobody]] now.", {"people/Nobody"})
+        assert body == "See people/Nobody now."
+        assert downgraded == ["people/Nobody"]
+
+    def test_aliased_link_becomes_its_alias(self) -> None:
+        body, downgraded = downgrade_links("By [[people/Nobody|the founder]].", {"people/Nobody"})
+        assert body == "By the founder."
+        assert downgraded == ["people/Nobody"]
+
+    def test_only_targeted_links_are_touched(self) -> None:
+        body, downgraded = downgrade_links(
+            "[[people/Bob]] met [[people/Nobody]].", {"people/Nobody"}
+        )
+        assert body == "[[people/Bob]] met people/Nobody."
+        assert downgraded == ["people/Nobody"]
+
+    def test_repeated_target_is_reported_once_and_rewritten_everywhere(self) -> None:
+        body, downgraded = downgrade_links("[[x/Y]] and again [[x/Y|alias]].", {"x/Y"})
+        assert body == "x/Y and again alias."
+        assert downgraded == ["x/Y"]
+
+    def test_links_inside_code_are_left_alone(self) -> None:
+        src = "Inline `[[x/Y]]` and\n\n```\n[[x/Y]]\n```\n\nprose [[x/Y]]."
+        body, downgraded = downgrade_links(src, {"x/Y"})
+        assert body == "Inline `[[x/Y]]` and\n\n```\n[[x/Y]]\n```\n\nprose x/Y."
+        assert downgraded == ["x/Y"]
+
+    def test_no_targets_is_a_no_op(self) -> None:
+        body, downgraded = downgrade_links("[[x/Y]]", set())
+        assert body == "[[x/Y]]"
+        assert downgraded == []

@@ -71,6 +71,11 @@ class JobRecord(BaseModel):
     notes_created: list[str] = Field(default_factory=list)
     notes_updated: list[str] = Field(default_factory=list)
 
+    #: Terminal dangling-link downgrades (§7.6): note path -> the link targets
+    #: whose ``[[ ]]`` markup was stripped on the final organize attempt. Empty
+    #: unless that last-resort path fired.
+    link_downgrades: dict[str, list[str]] = Field(default_factory=dict)
+
     source_sha: str | None = None
     #: Size in UTF-8 bytes of the ingested text.
     source_bytes: int | None = None

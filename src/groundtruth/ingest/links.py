@@ -65,6 +65,48 @@ def extract_links(body: str) -> list[Link]:
     return links
 
 
+def downgrade_links(body: str, targets: Collection[str]) -> tuple[str, list[str]]:
+    """Rewrite ``[[target]]`` / ``[[target|alias]]`` to plain text for every link
+    whose target is in ``targets`` — the alias text if the link had one, else the
+    raw target. Links inside fenced blocks or inline code are left untouched
+    (``extract_links`` never treats them as links either). Returns the new body
+    and the targets actually downgraded, in first-seen order.
+
+    Used only by the terminal dangling-link downgrade of §7.6: it removes the
+    ``[[ ]]`` markup and nothing else.
+    """
+    wanted = set(targets)
+    downgraded: list[str] = []
+
+    def _replace(match: re.Match[str]) -> str:
+        target = match.group(1).split("#", 1)[0].strip()
+        if target not in wanted:
+            return match.group(0)
+        if target not in downgraded:
+            downgraded.append(target)
+        alias = (match.group(2) or "").strip()
+        return alias or target
+
+    out: list[str] = []
+    fence: str | None = None
+    for line in body.split("\n"):
+        marker = _FENCE_MARKER.match(line)
+        if fence is None and marker:
+            fence = marker.group(1)[0]
+            out.append(line)
+            continue
+        if fence is not None:
+            out.append(line)
+            if marker and marker.group(1)[0] == fence:
+                fence = None
+            continue
+        segments = re.split(r"(`[^`\n]*`)", line)  # code spans land at odd indices
+        for i in range(0, len(segments), 2):
+            segments[i] = _WIKILINK.sub(_replace, segments[i])
+        out.append("".join(segments))
+    return "\n".join(out), downgraded
+
+
 def _index(paths: Iterable[str]) -> set[str]:
     """Map each note path to the strings a link may use to reach it."""
     keys: set[str] = set()
@@ -89,4 +131,4 @@ def check_links(
     ]
 
 
-__all__ = ["Dangling", "Link", "check_links", "extract_links"]
+__all__ = ["Dangling", "Link", "check_links", "downgrade_links", "extract_links"]

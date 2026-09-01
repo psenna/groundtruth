@@ -132,6 +132,16 @@ class TestJobRecord:
         job = JobRecord(id="01J8X", vault="work")
         assert job.state is JobState.QUEUED
 
+    def test_link_downgrades_defaults_empty_and_round_trips(self) -> None:
+        job = JobRecord(id="01J8X", vault="work")
+        assert job.link_downgrades == {}
+        loaded = JobRecord.model_validate_json(
+            job.model_copy(
+                update={"link_downgrades": {"companies/Acme.md": ["people/Nobody"]}}
+            ).model_dump_json()
+        )
+        assert loaded.link_downgrades == {"companies/Acme.md": ["people/Nobody"]}
+
     def test_legal_transition(self) -> None:
         job = JobRecord(id="01J8X", vault="work")
         running = job.transitioned_to(JobState.RUNNING)
