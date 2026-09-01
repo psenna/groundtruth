@@ -493,6 +493,11 @@ _RETRY_HINTS: dict[str, str] = {
     ),
     "duplicate_path": "You staged the same path twice — merge those into one call.",
     "filename": ("Keep the title plain: no slashes, no leading dots, no path segments."),
+    "note_substance": (
+        "You created a note but left its body a stub ('placeholder', a lone "
+        "heading, only links). Write the full note body in the same create_note "
+        "call, or do not create that note at all — there is no second pass."
+    ),
 }
 
 
