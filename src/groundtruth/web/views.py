@@ -4,8 +4,8 @@ no build step.
 Adapter only — every handler is a form/param parse plus one or two
 :class:`Services` calls plus a template render. A refusal renders **as a
 refusal**, visually distinct from an error and from an empty result. The
-``_ago`` / ``_duration`` / ``_job_row`` helpers are presentation formatting, not
-business logic.
+``_ago`` / ``_waited`` / ``_ran`` / ``_job_row`` helpers are presentation
+formatting, not business logic.
 """
 
 from __future__ import annotations
@@ -39,13 +39,26 @@ def _ago(when: datetime | None, now: datetime) -> str:
     return f"{secs}s ago" if secs else "just now"
 
 
-def _duration(rec: JobRecord, now: datetime) -> str:
-    total = sum(rec.stage_timings.values())
-    if not total and rec.state is JobState.RUNNING and rec.created_at is not None:
-        total = (now - rec.created_at).total_seconds()
-    if not total:
+def _clock(seconds: float) -> str:
+    if seconds < 0:
+        seconds = 0
+    return f"{seconds:.1f}s" if seconds < 60 else f"{seconds / 60:.1f}m"
+
+
+def _waited(rec: JobRecord, now: datetime) -> str:
+    """Time the job sat in the queue: created -> started (or -> now if still queued)."""
+    if rec.created_at is None:
         return "—"
-    return f"{total:.1f}s" if total < 60 else f"{total / 60:.1f}m"
+    end = rec.started_at or (now if rec.state is JobState.QUEUED else rec.created_at)
+    return _clock((end - rec.created_at).total_seconds())
+
+
+def _ran(rec: JobRecord, now: datetime) -> str:
+    """Wall-clock time actually running: started -> finished (or -> now if running)."""
+    if rec.started_at is None:
+        return "—"
+    end = now if rec.state is JobState.RUNNING else (rec.updated_at or now)
+    return _clock((end - rec.started_at).total_seconds())
 
 
 def _job_row(rec: JobRecord, now: datetime) -> dict[str, Any]:
@@ -54,7 +67,8 @@ def _job_row(rec: JobRecord, now: datetime) -> dict[str, Any]:
         "vault": rec.vault,
         "state": rec.state.value,
         "created": _ago(rec.created_at, now),
-        "duration": _duration(rec, now),
+        "waited": _waited(rec, now),
+        "ran": _ran(rec, now),
         "notes": len(rec.notes_created) + len(rec.notes_updated),
         "created_n": len(rec.notes_created),
         "updated_n": len(rec.notes_updated),

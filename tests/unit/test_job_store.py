@@ -60,6 +60,23 @@ class TestTimestampsAndListing:
         assert rec.created_at == datetime(2026, 1, 1, tzinfo=UTC)
         assert rec.updated_at == datetime(2026, 1, 2, tzinfo=UTC)
 
+    def test_started_at_stamped_once_on_running_transition(self, tmp_path: Path) -> None:
+        times = iter(datetime(2026, 1, d, tzinfo=UTC) for d in (1, 5, 9))
+        store = JobStore(tmp_path, now=lambda: next(times))
+        store.create(_job())  # day 1
+        assert store.load("01J8X").started_at is None
+        store.update(_job(state=JobState.RUNNING))  # day 5 -> started
+        store.update(_job(state=JobState.SUCCEEDED))  # day 9 -> started unchanged
+        rec = store.load("01J8X")
+        assert rec is not None
+        assert rec.started_at == datetime(2026, 1, 5, tzinfo=UTC)  # the RUNNING time, not day 9
+
+    def test_started_at_stays_none_for_a_job_that_never_ran(self, tmp_path: Path) -> None:
+        store = JobStore(tmp_path)
+        store.create(_job())
+        store.update(_job(state=JobState.FAILED))  # QUEUED -> FAILED (restart recovery)
+        assert store.load("01J8X").started_at is None
+
     def test_list_recent_is_newest_activity_first_and_limited(self, tmp_path: Path) -> None:
         times = iter(datetime(2026, 1, d, tzinfo=UTC) for d in (1, 2, 3, 4, 5, 6))
         store = JobStore(tmp_path, now=lambda: next(times))

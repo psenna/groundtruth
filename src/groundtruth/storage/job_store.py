@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import GroundtruthError
-from ..models import TERMINAL_JOB_STATES, JobRecord
+from ..models import TERMINAL_JOB_STATES, JobRecord, JobState
 from ..redaction import contains_secret
 
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -103,8 +103,16 @@ class JobStore:
             raise ValueError(
                 f"illegal job transition: {existing.state.value} -> {record.state.value}"
             )
+        now = self._now()
+        started_at = existing.started_at
+        if started_at is None and record.state is JobState.RUNNING:
+            started_at = now  # stamp once, on QUEUED -> RUNNING
         record = record.model_copy(
-            update={"created_at": existing.created_at, "updated_at": self._now()}
+            update={
+                "created_at": existing.created_at,
+                "started_at": started_at,
+                "updated_at": now,
+            }
         )
         self._write(record)
         return record

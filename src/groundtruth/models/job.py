@@ -36,8 +36,11 @@ class JobRecord(BaseModel):
     state: JobState = JobState.QUEUED
 
     #: Set by the JobStore on create / on every state write. Optional so records
-    #: written before this field existed still load.
+    #: written before this field existed still load. ``started_at`` is stamped
+    #: once, on the QUEUED -> RUNNING transition, so wait time
+    #: (``started_at - created_at``) and run time can be told apart.
     created_at: datetime | None = None
+    started_at: datetime | None = None
     updated_at: datetime | None = None
 
     #: Per-stage wall-clock seconds (spec §12.4).
