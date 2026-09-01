@@ -347,6 +347,36 @@ with nothing staged:**
 Constraining by construction — rather than sanitizing bad output — is what keeps
 an LLM from being an unbounded write primitive into a git repo. See ADR-5.
 
+**Terminal dangling-link downgrade — the one exception.** The validator fails
+fast: the first failing check aborts the batch. On the **final** organize attempt
+(after every retry of §7.5 is spent), if the check that fired is **Link
+integrity** and nothing else, the system removes the `[[` `]]` delimiters around
+each unresolved link in the offending note — keeping the alias text if the link
+was `[[target|alias]]`, otherwise the raw target text — and re-runs the **entire**
+validator over the batch. The job proceeds only if that re-validation is
+completely clean; if any check fails on the re-run — including Link integrity on
+another note, or a different rule on the same note — the job fails loudly with
+nothing staged, exactly as before.
+
+This is deliberately narrow and is **not** a reopening of sanitize-and-continue
+(ADR-5):
+
+- It never fires before the final attempt. The model gets every retry to fix its
+  own output first.
+- It only ever deletes the four markup characters `[[` and `]]` from around text
+  the model itself wrote. It never invents a path, edits prose, moves a note, or
+  touches any other content.
+- It is scoped to exactly one check. Folder, filename, containment, note count,
+  note size, frontmatter, and collision failures still fail the whole job with
+  nothing staged, always, with no repair.
+- The downgrade is recorded on the job record and emitted to the stage log,
+  naming the note and each downgraded link. It is never silent.
+
+Rationale: a dangling `[[wikilink]]` is by a wide margin the most common single
+reason a local model's ingest fails, and it characteristically fails *after* the
+retry. The reference text the model wrote still belongs in the note as prose;
+discarding a whole job's work over a stray pair of brackets is the wrong trade.
+
 ### 7.7 Atomicity
 
 All changes are staged with `git add`. **The commit happens only on full pipeline
@@ -807,6 +837,14 @@ An LLM emitting arbitrary paths into a git repo is an unbounded write primitive.
 Sanitizing keeps jobs from failing but erodes vault quality silently, and nobody
 reviews warnings. Failing loudly on a validator rejection is the correct
 behavior for a system whose value is trustworthiness.
+
+*Amendment (v0.0.10):* §7.6 now carries one bounded exception — a terminal,
+logged, Link-integrity-only downgrade that strips `[[ ]]` markup after all
+organize retries are spent, then re-validates the whole batch. It does not
+reopen sanitize-and-continue: it repairs nothing and invents nothing (it only
+deletes markup around text the model wrote), it is confined to a single check
+on the final attempt, and every other validator failure still aborts the job
+with nothing staged. See §7.6.
 
 **ADR-6 — Budget exhaustion produces a refusal, not a partial answer.**
 *Rejected:* partial answers behind a "search incomplete" banner.
