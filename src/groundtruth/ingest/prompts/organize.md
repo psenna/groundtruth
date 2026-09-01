@@ -38,6 +38,9 @@ its own note when that section is substantial enough to stand alone.
 **Every note must carry substance.** Do not create a note whose body is only a pointer —
 "see `docs/x.md`", "details in [[y]]", "this covers …" with nothing after it. If all you
 have for a heading is a reference, fold it into a related note as a line, or leave it out.
+**Never create a note as a placeholder to fill in later** — write "placeholder", "TODO",
+or a lone heading and the whole ingest fails. Write the note's full body in the same
+`create_note` call, or don't create it. There is no second pass.
 
 Link related notes to each other with `[[wikilinks]]` in the body, respecting the
 link rule under "Every note path in the vault" above — a dangling link fails the

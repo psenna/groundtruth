@@ -14,6 +14,7 @@ re-derives and cross-checks.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection, Mapping
 from typing import Any, NoReturn
 
@@ -73,6 +74,41 @@ def _check_batch(pending: PendingWrites, limits: Limits) -> None:
 def _check_body_type(note: PendingNote) -> None:
     if not isinstance(note.body, str):
         _reject("body_type", note.path, f"body must be a string, got {type(note.body).__name__}")
+
+
+#: A body that says nothing — the model created a shell it meant to fill later.
+_PLACEHOLDER = re.compile(
+    r"\A[\W_]*(?:placeholder|to-?do|tbd|tba|wip|fixme|stub|"
+    r"coming soon|to be (?:written|added|filled|completed|done))[\W_]*\Z",
+    re.IGNORECASE,
+)
+
+
+def _check_body_substance(note: PendingNote) -> None:
+    """Reject a note whose body carries no real content — only headings, only
+    ``[[wikilinks]]``, or a bare 'placeholder' / 'TODO'. A stub note is worse
+    than no note; the retry (#94) then asks the model to write it or drop it.
+
+    Runs after ``_check_body_type``, so ``note.body`` is known to be a ``str``.
+    """
+    prose_lines: list[str] = []
+    for raw in note.body.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        prose_lines.append(re.sub(r"^[-*+]\s+", "", stripped))
+    prose = " ".join(prose_lines).strip()
+    if _PLACEHOLDER.match(prose):
+        _reject("note_substance", note.path, f"the note body is a placeholder ({prose!r})")
+    # ``[^\W_]`` is a letter or digit — a body with none, once headings and
+    # ``[[links]]`` are removed, is only a heading, a link list, or punctuation.
+    if not re.search(r"[^\W_]", re.sub(r"\[\[[^\]]*\]\]", "", prose)):
+        _reject(
+            "note_substance",
+            note.path,
+            "the note body has no content — only a heading or a link. Write the "
+            "note in full or do not create it.",
+        )
 
 
 def _check_containment(note: PendingNote, vault_root: str) -> None:
@@ -186,6 +222,7 @@ def validate(
     created_this_batch = set(pending.paths)
     for note in pending:
         _check_body_type(note)
+        _check_body_substance(note)
         _check_containment(note, str(vault_root))
         _check_path_shape(note)
         _check_existence(note, existing)

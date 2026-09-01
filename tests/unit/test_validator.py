@@ -119,6 +119,17 @@ class TestSevenSixTable:
         big = _note(body="x" * 500 + "\n")
         _expect(_pending(big), "note_size", root=tmp_path)
 
+    @pytest.mark.parametrize("stub", ["placeholder", "TODO\n", "  ...  ", "# Heading only\n"])
+    def test_placeholder_or_empty_body_rejected(self, tmp_path: Path, stub: str) -> None:
+        _expect(_pending(_note(body=stub)), "note_substance", root=tmp_path)
+
+    def test_body_that_is_only_wikilinks_rejected(self, tmp_path: Path) -> None:
+        links = _note(body="# See also\n\n- [[people/Bob]]\n- [[companies/Globex]]\n")
+        _expect(_pending(links), "note_substance", root=tmp_path)
+
+    def test_a_short_real_body_is_fine(self, tmp_path: Path) -> None:
+        _validate(_pending(_note(body="Acme is a vendor.\n")), root=tmp_path)
+
     def test_note_size_counts_frontmatter_not_just_body(self, tmp_path: Path) -> None:
         # small body, but 40 source hashes push the rendered note past the limit
         fat = _note(body="tiny\n", frontmatter=_fm(sources=[f"{i:064x}" for i in range(40)]))
