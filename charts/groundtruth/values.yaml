@@ -165,6 +165,9 @@ config:
         # params:
         #   temperature: 0.2
         #   presence_penalty: 0
+      # -- `model:` is NOT inherited from default: these three roles keep their
+      # built-in models unless changed here. Only `organize` uses default's
+      # model. See docs/local-model-tuning.md.
       tag: {model: qwen2.5:7b}
       reduce: {model: qwen2.5:14b}
       answer: {model: qwen2.5:32b}   # e.g. answer: {model: ..., params: {temperature: 0.4}}

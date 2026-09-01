@@ -25,6 +25,7 @@ read-only web UI. Editing happens in Obsidian.
 
 - **[`docs/requirements.md`](docs/requirements.md)** — the spec (16 sections, 11 ADRs)
 - **[`CLAUDE.md`](CLAUDE.md)** — contributor and agent guide: commands, TDD protocol, invariants
+- **[`docs/local-model-tuning.md`](docs/local-model-tuning.md)** — running against a local Ollama / vLLM model: roles, sampling, budgets
 
 ## Running with Docker
 
@@ -45,6 +46,10 @@ open http://localhost:8000/               # web UI;  /health is unauthenticated
 - Commits carry the dedicated `groundtruth` git identity, configured in the image.
 - The container runs as a non-root user; no secret is baked into any layer.
 - Data survives `docker compose restart` — everything lives in the named volumes.
+- Pointing groundtruth at a **local model** (Ollama, vLLM, …)? See
+  [`docs/local-model-tuning.md`](docs/local-model-tuning.md) for which model runs
+  which stage, the sampling and `reasoning_effort` settings that matter, and
+  `max_tool_calls` / context-window guidance.
 
 ## Running on Kubernetes
 
