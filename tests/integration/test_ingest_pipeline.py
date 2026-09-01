@@ -11,7 +11,8 @@ from groundtruth.errors import MalformedLLMOutputError
 from groundtruth.ingest.dedup import content_hash
 from groundtruth.ingest.pipeline import IngestPipeline
 from groundtruth.llm.client import LLMResponse, TokenUsage, ToolCall
-from groundtruth.models import JobState, SourceRecord, Vault
+from groundtruth.models import JobState, Note, NoteFrontmatter, SourceRecord, Vault
+from groundtruth.storage.frontmatter import parse_note, render_note
 from groundtruth.storage.git import GitRepo
 from groundtruth.storage.job_store import JobStore
 from groundtruth.storage.source_index import SourceIndex
@@ -471,6 +472,65 @@ class TestTagRetry:
         assert job.state is JobState.FAILED
         assert job.failure_stage == "llm"
         assert GitRepo(vault.repo_root).is_clean()
+
+
+def _seed_note(vault: Vault, rel: str, body: str) -> None:
+    stem = rel.rsplit("/", 1)[-1].removesuffix(".md")
+    note = Note(
+        path=rel,
+        frontmatter=NoteFrontmatter(
+            title=stem,
+            tags=["company"],
+            sources=["b" * 64],
+            created=date(2026, 7, 1),
+            updated=date(2026, 7, 1),
+        ),
+        body=body,
+    )
+    target = vault.vault_dir / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(render_note(note))
+    _git(vault.repo_root, "add", "-A")
+    _git(vault.repo_root, "commit", "-m", "seed note")
+
+
+class TestCollisionCoercion:
+    def test_create_over_an_existing_note_commits_as_an_update(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        _seed_note(vault, "companies/Acme Corp.md", "Old.\n")
+        commits_before = int(_git(vault.repo_root, "rev-list", "--count", "HEAD"))
+
+        client = RecordingClient(_happy_responses())
+        job = _run(pipeline, vault, client, _config())
+
+        assert job.state is JobState.SUCCEEDED
+        assert job.notes_updated == ["companies/Acme Corp.md"]
+        assert job.notes_created == []
+
+        commits_after = int(_git(vault.repo_root, "rev-list", "--count", "HEAD"))
+        assert commits_after == commits_before + 1
+        files = _git(vault.repo_root, "show", "--name-only", "--format=", "HEAD").splitlines()
+        assert "work/companies/Acme Corp.md" in files
+
+        persisted = parse_note((vault.vault_dir / "companies" / "Acme Corp.md").read_text())
+        assert "Founded 1996." in persisted.body
+        assert persisted.frontmatter.created == date(2026, 7, 1)
+        assert set(persisted.frontmatter.sources) == {"b" * 64, content_hash(TEXT)}
+
+        fed_back = " ".join(str(m.get("content") or "") for msgs in client.seen for m in msgs)
+        assert "collision" not in fed_back
+
+    def test_a_genuinely_new_note_is_still_created(
+        self, env: tuple[IngestPipeline, Vault, Path]
+    ) -> None:
+        pipeline, vault, _ = env
+        job = _run(pipeline, vault, RecordingClient(_happy_responses()), _config())
+
+        assert job.state is JobState.SUCCEEDED
+        assert job.notes_created == ["companies/Acme Corp.md"]
+        assert job.notes_updated == []
 
 
 class TestPerNoteTagging:

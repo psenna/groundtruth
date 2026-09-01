@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import inspect
+import logging
+
+import pytest
 
 from groundtruth.ingest.write_tools import BUDGET_EXHAUSTED, PendingWrites, WriteTools
 from groundtruth.retrieval.budget import Budget, BudgetLimits
@@ -137,6 +140,69 @@ class TestArgumentNormalisation:
         body = "Note: this is ordinary prose that happens to start with a word and colon.\n"
         tools.create_note("f", "N", body)
         assert tools.pending.notes[0].body == body
+
+
+class TestCollisionCoercion:
+    def test_create_over_an_existing_path_is_buffered_as_an_update(self) -> None:
+        tools = _tools({"companies/Acme Corp.md"})
+        msg = tools.create_note("companies", "Acme Corp", "New body.")
+        assert len(tools.pending) == 1
+        note = tools.pending.notes[0]
+        assert note.path == "companies/Acme Corp.md"
+        assert note.is_new is False
+        assert note.body == "New body."
+        assert "created" not in msg
+        assert "updated" in msg
+
+    def test_coerced_note_is_shaped_exactly_like_an_update(self) -> None:
+        tools = _tools({"companies/Acme Corp.md"})
+        tools.create_note("companies", "Acme Corp", "New body.")
+        note = tools.pending.notes[0]
+        assert note.folder is None and note.title is None
+
+    def test_title_normalisation_runs_before_the_collision_check(self) -> None:
+        tools = _tools({"projects/Usage.md"})
+        tools.create_note("projects", "Usage.md", "b")
+        assert tools.pending.notes[0].is_new is False
+
+    def test_unsafe_title_still_errors_even_when_a_note_exists(self) -> None:
+        tools = _tools({"companies/escape.md"})
+        msg = tools.create_note("companies", "../escape", "x")
+        assert "error" in msg.lower()
+        assert len(tools.pending) == 0
+
+    def test_same_path_twice_in_one_batch_still_errors_when_the_path_exists(self) -> None:
+        tools = _tools({"f/A.md"})
+        first = tools.create_note("f", "A", "x")
+        assert "updated" in first
+        second = tools.create_note("f", "A", "x")
+        assert "already staged" in second
+        assert len(tools.pending) == 1
+
+    def test_the_coercion_is_logged_to_the_stage_log(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.INFO, logger="groundtruth.jobs"):
+            tools = WriteTools(
+                vault_root="/vault",
+                existing_paths={"companies/Acme.md"},
+                job_id="01JOB",
+                vault_name="work",
+            )
+            tools.create_note("companies", "Acme", "New body.")
+        records = [r for r in caplog.records if r.name == "groundtruth.jobs"]
+        assert len(records) == 1
+        payload = records[0].groundtruth
+        assert payload["stage"] == "llm"
+        assert payload["status"] == "coerce"
+        assert payload["path"] == "companies/Acme.md"
+        assert payload["job_id"] == "01JOB"
+
+    def test_update_to_a_missing_path_is_still_refused_and_never_becomes_a_create(self) -> None:
+        tools = _tools({"companies/Real.md"})
+        msg = tools.update_note("companies/Ghost.md", "x")
+        assert "error" in msg.lower()
+        assert tools.pending.paths == []
 
 
 class TestDispatch:
