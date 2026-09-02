@@ -19,7 +19,10 @@ const BENCH = join(HERE, "..");
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, arr) => {
-    if (a.startsWith("--")) acc.push([a.slice(2), arr[i + 1]?.startsWith("--") ? true : arr[i + 1]]);
+    if (a.startsWith("--")) {
+      const next = arr[i + 1];
+      acc.push([a.slice(2), next === undefined || next.startsWith("--") ? true : next]);
+    }
     return acc;
   }, []),
 );
@@ -31,12 +34,24 @@ if (!TARGET || !VAULT) {
   process.exit(2);
 }
 
-async function api(path, opts) {
-  const r = await fetch(TARGET + path, opts);
+async function api(path, opts = {}) {
+  const r = await fetch(TARGET + path, { signal: AbortSignal.timeout(120000), ...opts });
   const t = await r.text();
   let body;
   try { body = JSON.parse(t); } catch { body = t; }
   return { status: r.status, body };
+}
+
+async function pMap(items, fn, concurrency = 6) {
+  const out = new Array(items.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      out[idx] = await fn(items[idx], idx);
+    }
+  }));
+  return out;
 }
 
 // --- schema: the declared folders ------------------------------------------------
@@ -104,10 +119,10 @@ const notePaths = notes.map((n) => n.path);
 result.notes.count = notes.length;
 
 const bodies = {};
-for (const n of notes) {
+await pMap(notes, async (n) => {
   const { body } = await api(`/notes/${encodeURIComponent(VAULT)}/${encodeURIComponent(n.path)}`);
   bodies[n.path] = body?.body ?? body?.content ?? "";
-}
+});
 
 const badFolder = [], badTags = [], thinBody = [], subfolderInvented = [];
 for (const n of notes) {
@@ -169,8 +184,7 @@ try {
 
 if (queries.length && !args["no-queries"]) {
   const atPhase = PHASE || 3;
-  const rows = [];
-  for (const item of queries) {
+  const rows = await pMap(queries, async (item) => {
     const wantAnswer = item.kind === "G" && atPhase >= item.minPhase;
     const { body } = await api("/query", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -181,9 +195,9 @@ if (queries.length && !args["no-queries"]) {
     const gotAnswer = outcome === "answer";
     const correct = wantAnswer === gotAnswer;
     const citeHit = !item.expect.length || item.expect.some((e) => cited.some((c) => c.endsWith(e) || c.split("/").pop() === e));
-    rows.push({ q: item.q, kind: wantAnswer ? "grounded" : "refused", outcome, correct, cited,
-      cite_ok: wantAnswer ? citeHit : true, answer: (body?.text || body?.message || "").slice(0, 300) });
-  }
+    return { q: item.q, kind: wantAnswer ? "grounded" : "refused", outcome, correct, cited,
+      cite_ok: wantAnswer ? citeHit : true, answer: (body?.text || body?.message || "").slice(0, 300) };
+  }, 3);
   result.queries = {
     total: rows.length,
     kind_correct: rows.filter((r) => r.correct).length,
